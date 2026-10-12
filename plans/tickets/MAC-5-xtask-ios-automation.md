@@ -4,7 +4,7 @@
 - **Branch:** `feature/ipados-xcode-runner`
 - **Recommended Model:** `GPT-6-Luna`
 - **Prerequisite:** `MAC-1`, `MAC-2`
-- **Status:** DEBUG SIMULATOR VERIFIED (2026-10-12); device signing/deployment and Release verification pending
+- **Status:** DEBUG DEVICE VERIFIED (2026-10-12): signed Debug install and launch on iPad Air 13-inch M3 via `--device --device-id --team --bundle-id`; Simulator Debug and Release install/launch pass; device Release build passes (`xcodebuild -configuration Release`, not installed). Device Release install and the xtask Release device path not yet run.
 
 ---
 

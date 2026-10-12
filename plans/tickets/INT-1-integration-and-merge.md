@@ -4,7 +4,7 @@
 - **Branch:** Integration / PR
 - **Recommended Model:** `GPT-6.1-Sol`
 - **Prerequisite:** `LINUX-4`, `MAC-5`
-- **Status:** IN PROGRESS (2026-10-12): Linux-assist already merged at `669635ca` (no redundant merge). Remaining: review uncommitted scene/hover/doc changes, coordinate the concurrent UI edits, final gates, commit/PR.
+- **Status:** GATES PASS (2026-10-12): `cargo xtask layers` (30 crates), `cargo xtask wasm`, `cargo clippy -p photocraft-ios -p photocraft-ui-egui -p xtask --all-targets -- -D warnings`, `cargo test -p photocraft-ios --lib` (47 passed). Not run: `panic_hunt` (no engine commands changed). Remaining: review and commit the uncommitted UI/documentation edits, then PR.
 
 ---
 
