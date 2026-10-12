@@ -280,6 +280,8 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) ->
             }
             set_ruler(app, r);
         }
+        // The condition consumes the drag state, so it stays in the body, not in a match guard.
+        #[allow(clippy::collapsible_match)]
         (Tool::Ruler, ToolEvent::Up { .. }) => {
             if app.ui.analysis.drag.take() == Some(Drag::RulerNew) && doc.measurement.ruler.is_some_and(|r| dist(r.start, r.end) < 0.5) {
                 let _ = app.run("image.analysis.rulerTool", json!({"clear": true}));
@@ -735,6 +737,8 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     app.ui.status = e;
                 }
             }
+            // Running the command is a side effect, so it stays in the body, not in a match guard.
+            #[allow(clippy::collapsible_match)]
             Some((id, p)) => {
                 if app.run(id, p).is_ok() {
                     app.ui.analysis.log_selected.clear();
