@@ -7,6 +7,7 @@ mod corpus;
 mod corpus_pins;
 mod i18n_coverage;
 mod ico;
+mod ios;
 mod layers;
 mod perf;
 mod pinned;
@@ -44,6 +45,9 @@ commands:
                   regenerate docs/scorecard.md (--check: fail if it is stale)
   version [set X.Y.Z[-pre]]
                   print the workspace version, or set it (Cargo.toml + Cargo.lock)
+  ios (--sim | --device) [--release] [--dry-run] [--sim-name N] [--device-id ID] [--team ID]
+                  build the PhotoCraft iPad bundle with xcodebuild and run it on the Simulator or a
+                  device (macOS + Xcode; --dry-run prints the plan anywhere; see `ios --help`)
   ico <out.ico> <in.png>...
                   pack square PNGs (<= 256 px) into a Windows .ico (see packaging/icons.sh)
 ";
@@ -63,6 +67,7 @@ fn main() -> ExitCode {
         Some("perf") => perf::run(&root(), &rest),
         Some("scorecard") => scorecard::run(&root(), &rest),
         Some("version") => version::run(&root(), &rest),
+        Some("ios") => ios::run(&root(), &rest),
         Some("ico") => ico::run(&rest),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");

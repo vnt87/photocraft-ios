@@ -56,6 +56,7 @@ signing, and the currently supported launch flow. Rust supplies the executable e
 and the existing egui editor; no Swift, Objective-C source, or webview shell is needed.
 UIKit document services and Apple Pencil integration are separate follow-up tickets in
 `plans/tickets/`. Building the bundle does not establish physical-device input or file-service parity.
+`cargo xtask ios --sim|--device [--release]` drives the build, install and launch (macOS only; `--dry-run` prints the commands anywhere).
 
 ### Faster test loops
 
