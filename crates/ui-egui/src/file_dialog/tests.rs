@@ -1,4 +1,5 @@
 use super::*;
+use photocraft_engine::security_token::DocumentSecurityToken;
 use crate::{Services, menus};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -660,4 +661,55 @@ fn an_unavailable_dialog_is_reported_and_a_cancelled_one_is_not() {
     assert!(app.ui.status_error);
     assert_eq!(app.ui.status, "No file dialog can open");
     assert!(!app.file_dialog_open(), "the pending dialog is over");
+}
+
+/// LINUX-3: a reply's bookmark metadata is stored with the recent file the answer opens.
+#[test]
+fn reply_tokens_are_stored_with_the_recent_file_and_pruned() {
+    let (mut app, open, _) = app();
+    let ctx = egui::Context::default();
+    let token = |b: &str| DocumentSecurityToken { bookmark_data: Some(b.into()), display_name: "a.psd".into(), original_url: None };
+    let pick = |app: &mut PhotocraftApp, tokens: Vec<(String, DocumentSecurityToken)>| {
+        app.ask_file(FileDialogRequest::Open { multiple: false, initial_dir: None, extensions: None }, |app, answer| {
+            let FileDialogAnswer::Paths(paths) = answer else { return Err(UNEXPECTED.into()) };
+            for p in &paths {
+                app.push_recent(p);
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+        app.poll_file_dialog(&ctx, None);
+        let (_, reply) = open.borrow_mut().pop().expect("a dialog is open");
+        reply.send_with_tokens(Some(FileDialogAnswer::Paths(vec!["/icloud/a.psd".into()])), tokens);
+        app.poll_file_dialog(&ctx, None);
+    };
+    // A token for another path than the one opened is not kept; a plain reply stores none.
+    pick(&mut app, vec![("/icloud/a.psd".into(), token("QUJD")), ("/elsewhere.psd".into(), token("X"))]);
+    let fh = &app.session.prefs().file_handling;
+    assert_eq!(fh.recent_files, vec!["/icloud/a.psd".to_string()]);
+    assert_eq!(fh.recent_file_tokens.keys().collect::<Vec<_>>(), vec!["/icloud/a.psd"]);
+    assert!(app.dialog_tokens.is_empty());
+    // Reopening without a token keeps the stored one.
+    pick(&mut app, Vec::new());
+    assert_eq!(app.session.prefs().file_handling.recent_token("/icloud/a.psd"), Some(&token("QUJD")));
+    // An unusable token is dropped; lowering the count prunes the map on the next sync.
+    pick(&mut app, vec![("/icloud/a.psd".into(), DocumentSecurityToken::default())]);
+    assert_eq!(app.session.prefs().file_handling.recent_token("/icloud/a.psd"), None);
+    pick(&mut app, vec![("/icloud/a.psd".into(), token("Z"))]);
+    app.session.prefs.edit(|p| p.file_handling.recent_file_count = 0);
+    app.sync_recent();
+    assert!(app.session.prefs().file_handling.recent_file_tokens.is_empty());
+    app.session.prefs.edit(|p| p.file_handling.recent_file_count = 20);
+    pick(&mut app, vec![("/icloud/a.psd".into(), token("Z"))]);
+    app.remove_recent("/icloud/a.psd");
+    assert!(app.session.prefs().file_handling.recent_file_tokens.is_empty());
+    pick(&mut app, vec![("/icloud/a.psd".into(), token("Z"))]);
+    app.clear_recent();
+    assert!(app.session.prefs().file_handling.recent_file_tokens.is_empty());
+    // A dialog that is dropped unanswered carries no tokens and does not panic.
+    app.ask_file(FileDialogRequest::Open { multiple: false, initial_dir: None, extensions: None }, |_, _| Ok(Value::Null)).unwrap();
+    app.poll_file_dialog(&ctx, None);
+    drop(open.borrow_mut().pop());
+    app.poll_file_dialog(&ctx, None);
+    assert!(!app.file_dialog_open());
 }

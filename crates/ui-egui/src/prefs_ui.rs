@@ -1462,6 +1462,8 @@ fn section_fields(
             if (section == "interface" && matches!(k.as_str(), "theme" | "appearanceMode" | "darkTheme" | "lightTheme" | "favoriteThemes"))
                 // View › Rulers (⌘R) sets it, as in Photoshop.
                 || path == "unitsAndRulers.showRulers"
+                // Sandbox bookmarks of the recent files: stored data, not a setting (LINUX-3).
+                || path == "fileHandling.recentFileTokens"
                 || prefs::is_hidden(&path)
                 || (section == "performance" && matches!(k.as_str(), "useGpu" | "gpuBackend" | "renderingMode"))
                 || (section == "export" && !export_field_visible(obj, &k))
@@ -2345,6 +2347,9 @@ mod tests {
                 }
                 let Some(obj) = v.get(sec).and_then(Value::as_object) else { continue };
                 for k in obj.keys() {
+                    if sec == "fileHandling" && k == "recentFileTokens" {
+                        continue; // Stored bookmarks, not shown in the dialog.
+                    }
                     if sec == "interface" && k == "favoriteThemes" {
                         continue; // Rendered as star controls beside the theme choices.
                     }

@@ -22,6 +22,68 @@ fn defaults_match_photoshop() {
     }
 }
 
+fn token(b: &str) -> DocumentSecurityToken {
+    DocumentSecurityToken { bookmark_data: Some(b.into()), display_name: "x".into(), original_url: None }
+}
+
+/// LINUX-3: preferences saved before security tokens existed still load, and tokens round-trip.
+#[test]
+fn recent_file_tokens_are_backward_compatible() {
+    let mut s = Session::new();
+    s.load_prefs_json(r#"{"fileHandling":{"recentFiles":["/a.psd"],"recentFileCount":5}}"#).unwrap();
+    assert_eq!(s.prefs().file_handling.recent_files, vec!["/a.psd".to_string()]);
+    assert!(s.prefs().file_handling.recent_file_tokens.is_empty());
+
+    let json = r#"{"fileHandling":{"recentFiles":["/a.psd"],"recentFileTokens":{"/a.psd":{"bookmarkData":"QUJD","displayName":"a.psd","originalUrl":"file:///a.psd"}}}}"#;
+    s.load_prefs_json(json).unwrap();
+    assert_eq!(s.prefs().file_handling.recent_token("/a.psd").and_then(|t| t.bookmark_data.as_deref()), Some("QUJD"));
+    let saved = s.prefs_to_json().to_string();
+    let mut s2 = Session::new();
+    s2.load_prefs_json(&saved).unwrap();
+    assert_eq!(s2.prefs().file_handling, s.prefs().file_handling);
+}
+
+#[test]
+fn recent_file_tokens_follow_the_recent_list() {
+    let mut fh = FileHandling { recent_files: vec!["/a".into(), "/b".into(), "/c".into()], recent_file_count: 2, ..Default::default() };
+    assert!(fh.set_recent_token("/a", token("A")));
+    assert!(fh.set_recent_token("/b", token("B")));
+    assert!(!fh.set_recent_token("/c", token("C")), "beyond the count");
+    assert!(!fh.set_recent_token("/zzz", token("Z")), "not listed");
+    assert!(!fh.recent_tokens_stale());
+    fh.recent_file_count = 1;
+    assert!(fh.recent_tokens_stale());
+    assert!(fh.prune_recent_tokens());
+    assert_eq!(fh.recent_file_tokens.keys().collect::<Vec<_>>(), vec!["/a"]);
+    assert!(!fh.prune_recent_tokens());
+    fh.recent_files.clear();
+    assert!(fh.prune_recent_tokens());
+    assert!(fh.recent_file_tokens.is_empty());
+}
+
+#[test]
+fn recent_file_tokens_survive_adversarial_input() {
+    let mut fh = FileHandling { recent_files: vec!["/a".into()], recent_file_count: u32::MAX, ..Default::default() };
+    // Empty and oversized tokens are refused.
+    assert!(!fh.set_recent_token("/a", DocumentSecurityToken::default()));
+    assert!(!fh.set_recent_token("/a", token(&"A".repeat(crate::security_token::MAX_BOOKMARK_BYTES + 1))));
+    assert!(fh.recent_file_tokens.is_empty());
+    // Tokens smuggled in through a hand-edited file are tightened on prune.
+    fh.recent_file_tokens.insert("/a".into(), DocumentSecurityToken { bookmark_data: Some(String::new()), display_name: "é".repeat(5000), original_url: Some("u".into()) });
+    fh.recent_file_tokens.insert("/gone".into(), token("G"));
+    assert!(fh.recent_tokens_stale());
+    assert!(fh.prune_recent_tokens());
+    let t = fh.recent_token("/a").unwrap();
+    assert_eq!(t.bookmark_data, None);
+    assert!(t.display_name.len() <= crate::security_token::MAX_TOKEN_TEXT_BYTES);
+    assert_eq!(fh.recent_file_tokens.len(), 1);
+    // Wrong types are a load error, never a panic.
+    let mut s = Session::new();
+    assert!(s.load_prefs_json(r#"{"fileHandling":{"recentFileTokens":"nope"}}"#).is_err());
+    assert!(s.load_prefs_json(r#"{"fileHandling":{"recentFileTokens":{"/a":7}}}"#).is_err());
+    assert!(s.load_prefs_json(r#"{"fileHandling":{"recentFileTokens":{"/a":{}}}}"#).is_ok());
+}
+
 /// #2264: the Studio workspace dot pattern can be hidden without changing themes.
 #[test]
 fn canvas_dot_grid_can_be_disabled_persisted_and_reset() {

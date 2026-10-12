@@ -83,6 +83,7 @@ pub mod pick_cmds;
 mod pixels;
 pub mod plugin_cmds;
 pub mod prefs;
+pub mod security_token;
 pub mod preset_import_cmds;
 pub mod preset_store;
 pub mod presets;
