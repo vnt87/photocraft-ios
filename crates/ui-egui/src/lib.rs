@@ -125,6 +125,7 @@ pub mod move_mods;
 pub mod move_ui;
 pub mod native_menu;
 pub mod new_doc_ui;
+pub mod new_guide_ui;
 pub mod new_layer_ui;
 pub mod notices;
 mod numeric_expression;
@@ -1568,7 +1569,7 @@ impl eframe::App for PhotocraftApp {
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         prefs_ui::tick(self, ctx);
-        monitor_status::poll(self, ctx);
+        monitor_status::poll_frame(self, ctx, frame);
         // Control requests and persisted preferences can change the language in this frame.
         i18n::sync_context(ctx, &self.session.prefs().interface.language);
         type_tool::sync_font_names(ctx, self.session.prefs().type_.show_font_names_in_english);
