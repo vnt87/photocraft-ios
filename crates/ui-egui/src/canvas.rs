@@ -2768,6 +2768,31 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     // Navigation (wheel_nav.rs): scroll pans (⇧ or ⌘/Ctrl sideways); pinch and ⌥-scroll zoom around the pointer.
     let wheel =
         crate::wheel_nav::read(&ctx, app.session.prefs().general.zoom_with_scroll_wheel, app.session.prefs().enhanced_controls.zoom_with_trackpad_pinch);
+    // Two-finger touch gestures (gestures.rs): pan, pinch-zoom and rotate about the fingers. They
+    // replace egui's own multi-touch zoom and rotation for the frame, and a lone finger is a palm
+    // while a stylus is active: neither paints.
+    let gesture_id = egui::Id::new(("pc-touch-gestures", ctx.viewport_id()));
+    let stylus_active = app.stylus.feed.get().is_some();
+    let touch_blocks = if primary && !under_dialog {
+        let frame = ctx.cumulative_frame_nr();
+        let events = ui.input(|i| i.events.clone());
+        let mut rec = ctx.data_mut(|d| d.get_temp::<crate::gestures::GestureRecognizer>(gesture_id)).unwrap_or_default();
+        let deltas = rec.feed_frame(frame, &events, rect, stylus_active);
+        for d in &deltas {
+            let cur = ViewXform { zoom: view.zoom / ppp, center: view.center, rotation: view.rotation, ..xf };
+            crate::gestures::apply_to_view(&mut view, &cur, d, ppp);
+        }
+        if !deltas.is_empty() {
+            ctx.request_repaint();
+        }
+        let blocks = rec.blocks_painting(stylus_active);
+        ctx.data_mut(|d| d.insert_temp(gesture_id, rec));
+        blocks
+    } else {
+        false
+    };
+    let touch_gesturing = ctx.data(|d| d.get_temp::<crate::gestures::GestureRecognizer>(gesture_id)).is_some_and(|r| r.is_gesturing());
+    let wheel = if touch_gesturing { None } else { wheel };
     // The wheel also scrolls over the scrollbars drawn on top of the canvas (last frame's hover).
     let bars_id = egui::Id::new(("pc-canvas-bars-hover", idx));
     let over_bars = ctx.data(|d| d.get_temp::<bool>(bars_id)).unwrap_or(false);
@@ -2789,7 +2814,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             }
             _ => {}
         }
-        let rotate_trackpad = app.session.prefs().enhanced_controls.rotate_view_with_trackpad;
+        let rotate_trackpad = app.session.prefs().enhanced_controls.rotate_view_with_trackpad && !touch_gesturing;
         if let Some(delta) = crate::rotate_view::trackpad_delta(&ctx, rotate_trackpad) {
             let next = view.rotation + delta;
             if next.is_finite() {
@@ -2940,7 +2965,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             let d = xf.to_doc(p);
             crate::layer_picker::sample_at(app, d[0], d[1]);
         }
-    } else if primary && !stroke_dismissal {
+    } else if primary && !stroke_dismissal && !(touch_blocks && app.drag.is_none()) {
         let mods = ui.input(|i| i.modifiers);
         // An ⌥-click the window manager took never arrives; say so (alt_grab.rs).
         crate::alt_grab::watch(app, &ctx, egui::Id::new(("pc-alt-grab", idx)), rect, tool, !under_dialog);

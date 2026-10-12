@@ -86,6 +86,7 @@ pub mod flick_pan;
 mod font_preview;
 pub mod frame_tool;
 pub mod gallery_ui;
+pub mod gestures;
 pub mod gpu_canvas;
 pub mod gpu_status;
 pub mod gradient_ui;
