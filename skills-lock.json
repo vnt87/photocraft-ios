@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "ipados-27-development": {
+      "source": "hechen/apple-platforms-27-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ipados-27-development/SKILL.md",
+      "computedHash": "e95318d63fed8df902358671a99611927cd9d968d6ca2dbd1372c110e708b8af"
+    },
+    "ipados-design-guidelines": {
+      "source": "ehmo/platform-design-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ipados/SKILL.md",
+      "computedHash": "d3c6a09efe0c6a74a08a944d4deb78b1a71595a45a4c25f4b8eedb657d16bca8"
+    }
+  }
+}
