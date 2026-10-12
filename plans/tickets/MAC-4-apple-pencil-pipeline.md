@@ -4,7 +4,7 @@
 - **Branch:** `feature/ipados-xcode-runner`
 - **Recommended Model:** `GPT-6.1-Sol`
 - **Prerequisite:** `MAC-2`
-- **Status:** READY TO PICK UP
+- **Status:** IMPLEMENTED / DEVICE-PARTIALLY-VERIFIED (2026-10-12): pressure and hover confirmed on iPad Air M3; tilt provisional; double-tap deferred; barrel rotation and eraser end unverified.
 
 ---
 

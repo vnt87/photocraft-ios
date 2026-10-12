@@ -7,7 +7,7 @@ use objc2_foundation::{
     NSArray, NSData, NSDataWritingOptions, NSError, NSFileCoordinator, NSFileCoordinatorReadingOptions, NSFileCoordinatorWritingOptions, NSObject,
     NSObjectProtocol, NSString, NSURL, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions,
 };
-use objc2_ui_kit::{UIApplication, UIDocumentPickerDelegate, UIDocumentPickerViewController, UIViewController};
+use objc2_ui_kit::{UIDocumentPickerDelegate, UIDocumentPickerViewController, UIViewController};
 use objc2_uniform_type_identifiers::UTType;
 use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, FileDialogRequest, Services};
 use std::cell::RefCell;
@@ -86,10 +86,7 @@ fn release_picker() {
 }
 
 fn root_controller(mtm: objc2::MainThreadMarker) -> Result<Retained<UIViewController>, String> {
-    let app = UIApplication::sharedApplication(mtm);
-    // winit owns an application-delegate window, without a UIWindowScene.
-    #[allow(deprecated)]
-    let window = app.keyWindow().or_else(|| app.windows().iter().find(|w| w.isKeyWindow()));
+    let window = crate::scenes::window(mtm);
     let window = window.ok_or("No active UIKit window")?;
     let root = window.rootViewController().ok_or("The UIKit window has no root controller")?;
     if root.presentedViewController().is_some() {

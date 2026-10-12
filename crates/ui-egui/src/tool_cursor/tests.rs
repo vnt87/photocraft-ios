@@ -190,7 +190,20 @@ fn lifecycle_clears_sticky_images_and_respects_later_widgets() {
 }
 
 #[test]
-#[cfg(not(target_arch = "wasm32"))]
+fn software_cursor_paints_geometry_without_an_os_bitmap() {
+    let ctx = egui::Context::default();
+    ctx.add_plugin(CursorLifecycle);
+    let output = frame(&ctx, |ui| {
+        let icon = show_with(ui.painter(), pos2(100.0, 100.0), Shape::Circle { radius: 20.0, centre: true }, false);
+        ui.ctx().set_cursor_icon(icon);
+    });
+
+    assert!(output.platform_output.cursor_image.is_none());
+    assert!(output.shapes.iter().any(|s| matches!(s.shape, egui::Shape::Circle(_))), "the software cursor geometry is painted");
+}
+
+#[test]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 fn ordinary_brush_cursor_is_not_part_of_the_canvas_draw_list() {
     let ctx = egui::Context::default();
     ctx.add_plugin(CursorLifecycle);
@@ -208,6 +221,21 @@ fn ordinary_brush_cursor_is_not_part_of_the_canvas_draw_list() {
     let image = output.platform_output.cursor_image.unwrap();
     assert!(image.size[0] < 32, "oversized tips retain a small native hotspot");
     assert!(output.shapes.iter().any(|s| matches!(s.shape, egui::Shape::Circle(_))), "the full tip is not silently shrunk");
+}
+
+#[test]
+#[cfg(target_os = "ios")]
+fn ios_brush_cursor_is_painted_without_an_os_bitmap() {
+    let ctx = egui::Context::default();
+    ctx.add_plugin(CursorLifecycle);
+    let output = frame(&ctx, |ui| {
+        let icon = circle(ui.painter(), pos2(100.0, 100.0), 20.0, true);
+        ui.ctx().set_cursor_icon(icon);
+    });
+
+    assert!(output.platform_output.cursor_image.is_none());
+    assert_eq!(output.platform_output.cursor_icon, CursorIcon::None);
+    assert!(output.shapes.iter().any(|s| matches!(s.shape, egui::Shape::Circle(_))), "the iOS cursor is painted at the pointer position");
 }
 
 /// Run explicitly for visual QA: native cursors are absent from GPU screenshots.

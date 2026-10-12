@@ -1,6 +1,6 @@
 # Hardware parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (first version: GPU, pen tablets, displays, gestures per platform against Photoshop 2026) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (iPadOS column added; first version: GPU, pen tablets, displays, gestures per platform against Photoshop 2026) · **Target:** Adobe Photoshop 2026
 
 Each hardware feature Photoshop 2026 (27.11.0) uses, per platform, against PhotoCraft. Photoshop
 side: its bundle (Metal and OpenCL paths, "Precise Color Management for HDR Display" and EDR
@@ -26,14 +26,20 @@ HDR display to verify.
 
 ## Pen tablets
 
-| Feature | Photoshop | macOS | Windows | Linux X11 | Linux Wayland | Web |
-|---|---|---|---|---|---|---|
-| Pressure | yes | yes (AppKit monitor) | yes (WM_POINTER), jumpy (#2046) | yes (XInput2) | via Xwayland only; GNOME 50 pen doesn't click (#2622), KDE (#2297) | yes |
-| Tilt | yes | yes | **no** | yes | no | yes |
-| Barrel rotation | yes | yes (not applied to tip angle, #1301) | no | partial | no | yes (twist) |
-| Eraser end | yes | yes | no (#2285) | partial | no | partial |
-| WinTab driver mode | yes | – | no | – | – | – |
-| Pressure curve | Windows Ink / driver | global curve in Preferences (#2195) | same | same | same | same |
+| Feature | Photoshop | macOS | Windows | Linux X11 | Linux Wayland | Web | iPadOS (Apple Pencil) |
+|---|---|---|---|---|---|---|---|
+| Pressure | yes | yes (AppKit monitor) | yes (WM_POINTER), jumpy (#2046) | yes (XInput2) | via Xwayland only; GNOME 50 pen doesn't click (#2622), KDE (#2297) | yes | yes (confirmed on iPad Air M3, iPadOS 27.0) |
+| Tilt | yes | yes | **no** | yes | no | yes | provisional (functional but subtle; not measured) |
+| Barrel rotation | yes | yes (not applied to tip angle, #1301) | no | partial | no | yes (twist) | not verified |
+| Eraser end | yes | yes | no (#2285) | partial | no | partial | not verified (Apple Pencil has no eraser end) |
+| Hover | yes | – | – | – | – | – | yes (painted cursor follows the tip; confirmed on device) |
+| Double-tap | – | – | – | – | – | – | deferred, not tested |
+| WinTab driver mode | yes | – | no | – | – | – | – |
+| Pressure curve | Windows Ink / driver | global curve in Preferences (#2195) | same | same | same | same | same |
+
+The iPadOS column comes from `apps/photocraft-ios` (`src/pencil`) and a physical iPad Air 13-inch M3
+on iPadOS 27.0 (2026-10-12, Debug build). Palm-before-pen produced no stray marks (provisional, not
+exhaustive). Not yet verified: pinch/pan/rotate gestures on hardware, multitasking, provider write-back.
 
 ## Displays and colour
 
@@ -54,6 +60,7 @@ HDR display to verify.
 | Trackpad rotate (Rotate View) | yes | yes (`rotate_view.rs`) | done |
 | Touch Bar | yes (Intel Macs) | no | missing (low value) |
 | Touch screens (Windows) | yes | basic pointer only | partial |
+| Touch (iPadOS) | yes | gesture engine and runner implemented and host-tested; pinch, two-finger pan and rotation not yet exercised on hardware | partial (unverified on device) |
 | 3D mouse, MIDI, Surface Dial | Surface Dial on Windows | no | missing (low value) |
 | Scanners (WIA / TWAIN) | WIA menu (Windows) | menu item live; no driver integration | partial |
 
@@ -62,3 +69,4 @@ HDR display to verify.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-10 | major | First version |
+| 2026-10-12 | minor | Added the iPadOS (Apple Pencil) column and touch row with only device-demonstrated results; double-tap deferred |

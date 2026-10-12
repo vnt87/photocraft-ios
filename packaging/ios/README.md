@@ -14,8 +14,10 @@ cargo xtask ios --sim
 ```
 
 `xtask ios --sim` builds, boots, installs, and launches through the simulator CLI.
-It also works with CLI-only Xcode installations. Add `--show-simulator` to open the
-desktop Simulator viewer when that application is installed.
+For a physical iPad pass `--device --device-id <udid> --team <id>`; `--bundle-id <id>` overrides
+the bundle identifier for both build and launch when the product id cannot be registered to your
+team. It does not require a desktop viewer. Xcode 27 provides Device Hub;
+`--show-simulator` currently targets the older Simulator application.
 
 The build phase resolves Cargo from `CARGO` or `$HOME/.cargo/bin` and builds only
 `--lib`. It maps arm64 device, arm64 Simulator, and Intel Simulator architectures
@@ -37,12 +39,14 @@ intentional unsigned builds. The runner owns
 UIKit startup and must keep interop within its Apple bridge modules.
 
 The plist permits iPad multitasking and declares opening documents in place.
-The scene manifest is omitted for the runner’s app-delegate lifecycle; multiple
-scenes require independent scene ownership before activation. Document type
-declarations advertise supported formats; actual document-picker and incoming URL
-handling remains the MAC-3 platform-services work.
+The scene manifest declares one PhotoCraft window scene, required by iPadOS 27.
+Multiple scenes remain disabled until independent window ownership is implemented.
+Document type declarations advertise supported formats; native document pickers
+are implemented, with provider selection and write-back acceptance still pending.
 The entitlement file is deliberately empty: iOS already sandboxes applications;
 macOS app-sandbox and user-selected-file entitlements do not belong here.
 
-The asset catalog is valid but has no app icon. Supply an approved, attributed
-icon before App Store distribution; the harness does not fabricate product assets.
+The asset catalog's `AppIcon` is the PhotoCraft kitsune from `assets/app-icon/`
+(attributed in `ATTRIBUTION.md`), flattened onto the full-bleed `#2f7bf5` field with no
+alpha channel, since iOS applies its own corner mask and rejects transparency. It is one
+1024 pt image that Xcode scales to every iPad size.

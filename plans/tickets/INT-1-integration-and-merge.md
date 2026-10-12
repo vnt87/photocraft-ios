@@ -4,7 +4,7 @@
 - **Branch:** Integration / PR
 - **Recommended Model:** `GPT-6.1-Sol`
 - **Prerequisite:** `LINUX-4`, `MAC-5`
-- **Status:** BLOCKED (Pending Linux and Mac tracks completion)
+- **Status:** IN PROGRESS (2026-10-12): Linux-assist already merged at `669635ca` (no redundant merge). Remaining: review uncommitted scene/hover/doc changes, coordinate the concurrent UI edits, final gates, commit/PR.
 
 ---
 

@@ -4,7 +4,7 @@
 - **Branch:** Integration / PR
 - **Recommended Model:** `Claude Haiku 5.5`
 - **Prerequisite:** `INT-2`
-- **Status:** BLOCKED (Pending INT-2 sign-off)
+- **Status:** PARTIAL (2026-10-12): documents only demonstrated iPadOS capabilities; full sign-off waits on INT-2. The blanket yes for barrel rotation and eraser end below is NOT established.
 
 ---
 

@@ -25,8 +25,8 @@ use objc2::runtime::ProtocolObject;
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_foundation::{NSArray, NSNumber, NSObject, NSObjectProtocol, NSSet};
 use objc2_ui_kit::{
-    UIApplication, UIEvent, UIGestureRecognizer, UIGestureRecognizerState, UIHoverGestureRecognizer, UIPencilInteraction, UIPencilInteractionDelegate,
-    UIPencilInteractionTap, UITouch, UITouchType, UIWindow,
+    UIEvent, UIGestureRecognizer, UIGestureRecognizerState, UIHoverGestureRecognizer, UIPencilInteraction, UIPencilInteractionDelegate, UIPencilInteractionTap,
+    UITouch, UITouchType, UIWindow,
 };
 use photocraft_ui_egui::stylus::StylusFeed;
 use std::cell::RefCell;
@@ -265,10 +265,7 @@ impl PencilTarget {
 }
 
 fn key_window(mtm: MainThreadMarker) -> Result<Retained<UIWindow>, String> {
-    let app = UIApplication::sharedApplication(mtm);
-    // winit owns an application-delegate window, without a UIWindowScene.
-    #[allow(deprecated)]
-    let window = app.keyWindow().or_else(|| app.windows().iter().find(|w| w.isKeyWindow())).or_else(|| app.windows().firstObject());
+    let window = crate::scenes::window(mtm);
     window.ok_or_else(|| "No UIKit window to attach Apple Pencil input to".into())
 }
 

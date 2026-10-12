@@ -22,6 +22,9 @@ usage: cargo xtask ios (--sim | --device) [--release] [options]
                       also read from $PHOTOCRAFT_IOS_DEVICE
   --team ID           Apple development team id for signing (DEVELOPMENT_TEAM);
                       also read from $PHOTOCRAFT_IOS_TEAM
+  --bundle-id ID      override the bundle identifier (PRODUCT_BUNDLE_IDENTIFIER) for the build and
+                      the launch, e.g. a team-unique development id when the canonical one cannot
+                      be registered to your team; also read from $PHOTOCRAFT_IOS_BUNDLE_ID
   -h, --help          print this help
 
 --sim and --device need macOS with Xcode and the Rust targets aarch64-apple-ios,
@@ -50,6 +53,8 @@ pub struct Options {
     pub show_simulator: bool,
     pub device_id: Option<String>,
     pub team: Option<String>,
+    /// Bundle id override; `None` keeps the project's canonical [`BUNDLE_ID`].
+    pub bundle_id: Option<String>,
 }
 
 /// Result of argument parsing.
@@ -59,11 +64,19 @@ pub enum Parsed {
     Run(Options),
 }
 
-/// Parse the arguments after `ios`. `env_device` / `env_team` are the environment fallbacks.
-pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) -> Result<Parsed, String> {
+/// Environment fallbacks for [`parse`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Env<'a> {
+    pub device: Option<&'a str>,
+    pub team: Option<&'a str>,
+    pub bundle_id: Option<&'a str>,
+}
+
+/// Parse the arguments after `ios`. `env` holds the environment fallbacks.
+pub fn parse(args: &[&str], env: Env) -> Result<Parsed, String> {
     let (mut sim, mut device, mut release, mut dry_run) = (false, false, false, false);
     let mut show_simulator = false;
-    let (mut sim_name, mut device_id, mut team) = (None, None, None);
+    let (mut sim_name, mut device_id, mut team, mut bundle_id) = (None, None, None, None);
     let mut it = args.iter().copied();
     while let Some(a) = it.next() {
         match a {
@@ -73,7 +86,7 @@ pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) ->
             "--release" => release = true,
             "--dry-run" => dry_run = true,
             "--show-simulator" => show_simulator = true,
-            "--sim-name" | "--device-id" | "--team" => {
+            "--sim-name" | "--device-id" | "--team" | "--bundle-id" => {
                 let v = match it.next() {
                     Some(v) if !v.starts_with('-') && !v.is_empty() => v.to_string(),
                     _ => return Err(format!("{a} needs a value")),
@@ -81,6 +94,7 @@ pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) ->
                 match a {
                     "--sim-name" => sim_name = Some(v),
                     "--device-id" => device_id = Some(v),
+                    "--bundle-id" => bundle_id = Some(v),
                     _ => team = Some(v),
                 }
             }
@@ -109,8 +123,9 @@ pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) ->
         dry_run,
         sim_name: sim_name.unwrap_or_else(|| DEFAULT_SIM.to_string()),
         show_simulator,
-        device_id: device_id.or_else(|| clean(env_device)),
-        team: team.or_else(|| clean(env_team)),
+        device_id: device_id.or_else(|| clean(env.device)),
+        team: team.or_else(|| clean(env.team)),
+        bundle_id: bundle_id.or_else(|| clean(env.bundle_id)),
     }))
 }
 
@@ -157,6 +172,11 @@ pub struct Plan {
     pub notes: Vec<String>,
 }
 
+/// The bundle id the build is signed with and the launch step targets.
+pub fn bundle_id(o: &Options) -> &str {
+    o.bundle_id.as_deref().unwrap_or(BUNDLE_ID)
+}
+
 pub fn configuration(o: &Options) -> &'static str {
     if o.release { "Release" } else { "Debug" }
 }
@@ -172,23 +192,32 @@ pub fn app_path(o: &Options) -> String {
 
 /// Build the ordered command list for `o`. Pure: no I/O.
 pub fn plan(o: &Options) -> Plan {
-    let destination = match o.mode {
-        Mode::Sim => "generic/platform=iOS Simulator",
-        Mode::Device => "generic/platform=iOS",
+    // A connected device is targeted by id so automatic provisioning can register it.
+    let destination = match (o.mode, &o.device_id) {
+        (Mode::Sim, _) => "generic/platform=iOS Simulator".to_string(),
+        (Mode::Device, Some(id)) => format!("id={id}"),
+        (Mode::Device, None) => "generic/platform=iOS".to_string(),
     };
+    let bundle = bundle_id(o);
     // xcodebuild runs packaging/ios/build-rust.sh (cargo build --lib per arch + lipo) and
     // link-rust.sh as build phases, so no separate cargo step is needed.
     let mut xcodebuild = Step::new(
         "xcodebuild",
-        &["-project", PROJECT, "-scheme", SCHEME, "-configuration", configuration(o), "-destination", destination, "-derivedDataPath", DERIVED_DATA],
+        &["-project", PROJECT, "-scheme", SCHEME, "-configuration", configuration(o), "-destination", &destination, "-derivedDataPath", DERIVED_DATA],
     );
     if o.mode == Mode::Device {
         // Automatic signing is the project default (CODE_SIGN_STYLE = Automatic). UNSURE: whether
         // -allowProvisioningUpdates is needed on the author's machine; it requires an Apple ID in Xcode.
         xcodebuild.args.push("-allowProvisioningUpdates".into());
+        if o.device_id.is_some() {
+            xcodebuild.args.push("-allowProvisioningDeviceRegistration".into());
+        }
         if let Some(team) = &o.team {
             xcodebuild.args.push(format!("DEVELOPMENT_TEAM={team}"));
         }
+    }
+    if let Some(id) = &o.bundle_id {
+        xcodebuild.args.push(format!("PRODUCT_BUNDLE_IDENTIFIER={id}"));
     }
     xcodebuild.args.push("build".into());
     let app = app_path(o);
@@ -203,7 +232,7 @@ pub fn plan(o: &Options) -> Plan {
                 steps.push(Step::new("open", &["-a", "Simulator"]));
             }
             steps.push(Step::new("xcrun", &["simctl", "install", &o.sim_name, &app]));
-            steps.push(Step::new("xcrun", &["simctl", "launch", &o.sim_name, BUNDLE_ID]));
+            steps.push(Step::new("xcrun", &["simctl", "launch", &o.sim_name, bundle]));
         }
         Mode::Device => match &o.device_id {
             Some(id) => {
@@ -211,7 +240,7 @@ pub fn plan(o: &Options) -> Plan {
                 // `devicectl device install app --device <id> <path>` and
                 // `devicectl device process launch --device <id> <bundle id>`.
                 steps.push(Step::new("xcrun", &["devicectl", "device", "install", "app", "--device", id, &app]));
-                steps.push(Step::new("xcrun", &["devicectl", "device", "process", "launch", "--device", id, BUNDLE_ID]));
+                steps.push(Step::new("xcrun", &["devicectl", "device", "process", "launch", "--device", id, bundle]));
             }
             None => {
                 steps.push(Step::new("xcrun", &["devicectl", "list", "devices"]));
@@ -263,7 +292,9 @@ fn execute(plan: &Plan, root: &Path) -> Result<(), String> {
 pub fn run(root: &Path, args: &[&str]) -> Result<(), String> {
     let env_device = std::env::var("PHOTOCRAFT_IOS_DEVICE").ok();
     let env_team = std::env::var("PHOTOCRAFT_IOS_TEAM").ok();
-    let o = match parse(args, env_device.as_deref(), env_team.as_deref())? {
+    let env_bundle = std::env::var("PHOTOCRAFT_IOS_BUNDLE_ID").ok();
+    let env = Env { device: env_device.as_deref(), team: env_team.as_deref(), bundle_id: env_bundle.as_deref() };
+    let o = match parse(args, env)? {
         Parsed::Help => {
             print!("{USAGE}");
             return Ok(());
@@ -286,7 +317,7 @@ mod tests {
     use super::*;
 
     fn opts(args: &[&str]) -> Options {
-        match parse(args, None, None) {
+        match parse(args, Env::default()) {
             Ok(Parsed::Run(o)) => o,
             other => panic!("expected options, got {other:?}"),
         }
@@ -295,14 +326,14 @@ mod tests {
     #[test]
     fn help_variants() {
         for a in ["--help", "-h", "help"] {
-            assert_eq!(parse(&[a], None, None), Ok(Parsed::Help));
+            assert_eq!(parse(&[a], Env::default()), Ok(Parsed::Help));
         }
-        assert_eq!(parse(&["--sim", "--help"], None, None), Ok(Parsed::Help));
+        assert_eq!(parse(&["--sim", "--help"], Env::default()), Ok(Parsed::Help));
     }
 
     #[test]
     fn parse_errors() {
-        let err = |a: &[&str]| parse(a, None, None).unwrap_err();
+        let err = |a: &[&str]| parse(a, Env::default()).unwrap_err();
         assert!(err(&[]).contains("choose a mode"));
         assert!(err(&["--release"]).contains("choose a mode"));
         assert!(err(&["--sim", "--device"]).contains("mutually exclusive"));
@@ -313,6 +344,7 @@ mod tests {
         assert!(err(&["--sim", "--team", "T"]).contains("only apply to --device"));
         assert!(err(&["--device", "--sim-name", "iPad"]).contains("only applies to --sim"));
         assert!(err(&["--device", "--show-simulator"]).contains("only applies to --sim"));
+        assert!(err(&["--sim", "--bundle-id"]).contains("needs a value"));
     }
 
     #[test]
@@ -320,12 +352,12 @@ mod tests {
         let o = opts(&["--sim", "--release", "--dry-run"]);
         assert_eq!((o.mode, o.release, o.dry_run), (Mode::Sim, true, true));
         assert_eq!(o.sim_name, DEFAULT_SIM);
-        let Ok(Parsed::Run(o)) = parse(&["--device"], Some("ENVDEV"), Some("ENVTEAM")) else { panic!() };
-        assert_eq!((o.device_id.as_deref(), o.team.as_deref()), (Some("ENVDEV"), Some("ENVTEAM")));
-        let Ok(Parsed::Run(o)) = parse(&["--device", "--device-id", "CLI", "--team", "T1"], Some("ENVDEV"), None) else { panic!() };
+        let Ok(Parsed::Run(o)) = parse(&["--device"], Env { device: Some("ENVDEV"), team: Some("ENVTEAM"), bundle_id: Some("env.bundle") }) else { panic!() };
+        assert_eq!((o.device_id.as_deref(), o.team.as_deref(), o.bundle_id.as_deref()), (Some("ENVDEV"), Some("ENVTEAM"), Some("env.bundle")));
+        let Ok(Parsed::Run(o)) = parse(&["--device", "--device-id", "CLI", "--team", "T1"], Env { device: Some("ENVDEV"), ..Env::default() }) else { panic!() };
         assert_eq!((o.device_id.as_deref(), o.team.as_deref()), (Some("CLI"), Some("T1")));
-        let Ok(Parsed::Run(o)) = parse(&["--device"], Some("  "), Some("")) else { panic!() };
-        assert_eq!((o.device_id, o.team), (None, None));
+        let Ok(Parsed::Run(o)) = parse(&["--device"], Env { device: Some("  "), team: Some(""), bundle_id: Some(" ") }) else { panic!() };
+        assert_eq!((o.device_id, o.team, o.bundle_id), (None, None, None));
     }
 
     #[test]
@@ -379,7 +411,8 @@ mod tests {
         let p = plan(&opts(&["--device", "--device-id", "00008103-ABC", "--team", "TEAM123"]));
         let lines: Vec<String> = p.steps.iter().map(Step::display).collect();
         assert_eq!(lines.len(), 3);
-        assert!(lines[0].contains("-destination generic/platform=iOS "));
+        assert!(lines[0].contains("-destination id=00008103-ABC "));
+        assert!(lines[0].contains("-allowProvisioningDeviceRegistration"));
         assert!(lines[0].contains("-allowProvisioningUpdates"));
         assert!(lines[0].contains("DEVELOPMENT_TEAM=TEAM123"));
         assert!(lines[0].ends_with(" build"));
@@ -387,6 +420,27 @@ mod tests {
         assert_eq!(lines[2], format!("xcrun devicectl device process launch --device 00008103-ABC {BUNDLE_ID}"));
         assert!(p.notes.is_empty());
         assert!(p.steps.iter().all(|s| !s.allow_failure));
+    }
+
+    #[test]
+    fn bundle_id_override_reaches_build_and_launch() {
+        let p = plan(&opts(&["--device", "--device-id", "D", "--bundle-id", "dev.example.app"]));
+        let lines: Vec<String> = p.steps.iter().map(Step::display).collect();
+        assert!(lines[0].contains("PRODUCT_BUNDLE_IDENTIFIER=dev.example.app build"));
+        assert!(lines[2].ends_with(" dev.example.app"));
+        let p = plan(&opts(&["--sim", "--bundle-id", "dev.example.app"]));
+        assert!(p.steps[0].display().contains("PRODUCT_BUNDLE_IDENTIFIER=dev.example.app"));
+        assert_eq!(p.steps.last().expect("launch").args.last().map(String::as_str), Some("dev.example.app"));
+        let p = plan(&opts(&["--sim"]));
+        assert!(!p.steps[0].display().contains("PRODUCT_BUNDLE_IDENTIFIER"));
+    }
+
+    #[test]
+    fn device_without_id_keeps_generic_destination() {
+        let p = plan(&opts(&["--device"]));
+        let b = p.steps[0].display();
+        assert!(b.contains("-destination generic/platform=iOS "));
+        assert!(!b.contains("DeviceRegistration"));
     }
 
     #[test]

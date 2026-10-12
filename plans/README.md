@@ -61,12 +61,14 @@ iPad Air M3 simulator running iPadOS 26.2. MAC-3 services are implemented: nativ
 clipboard/preferences round trips, browser dispatch, picker presentation, and
 host recovery tests pass. Actual provider selection/save/cancel and lifecycle
 behavior still need device acceptance. MAC-4 is host-tested and installs without
-startup errors on the simulator; Pencil capabilities remain unverified on hardware.
+startup errors. Physical iPad Air 13-inch M3 / iPadOS 27 Debug installation and
+launch pass; the user verified pressure-dependent Pencil brush width.
 
 LINUX-1/2/4 are integrated. The redundant LINUX-3 token API was removed in favor
 of managed snapshots and sidecar bookmarks, with legacy-preferences regression
-coverage. Device signing/deployment, Release runs, iPadOS 27 runtime behavior,
-scene-aware layout, and physical Pencil validation remain open. See
+coverage. Single-scene registration and physical iPadOS 27 startup are verified.
+Release runs, lifecycle/resizing, remaining Pencil capabilities, and native file
+acceptance remain open. See
 `plans/MAC-simulator-validation.md` and the historical Linux handoff.
 
 ### Phase 1: Linux Track (Claude Code on Linux Server)

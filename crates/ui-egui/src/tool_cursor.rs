@@ -78,7 +78,7 @@ pub(crate) fn outline(painter: &Painter, at: Pos2, rings: Vec<Vec<Vec2>>, centre
 /// Can this pass show an OS cursor bitmap? eframe's immediate viewports and its web integration
 /// don't upload cursor images; every desktop root viewport does (winit custom cursors).
 fn native(ctx: &egui::Context) -> bool {
-    cfg!(not(target_arch = "wasm32")) && ctx.viewport_id() == egui::ViewportId::ROOT
+    cfg!(not(target_arch = "wasm32")) && cfg!(not(target_os = "ios")) && ctx.viewport_id() == egui::ViewportId::ROOT
 }
 
 /// Bitmap pixels per egui point. winit takes an `NSCursor` image's dimensions as logical points on
@@ -107,7 +107,12 @@ fn hand_with(ctx: &egui::Context, closed: bool, bitmap: bool) -> CursorIcon {
 fn show(painter: &Painter, at: Pos2, shape: Shape) -> CursorIcon {
     let ctx = painter.ctx();
     // Where cursor images can't be uploaded (immediate viewports, the web), paint the shape.
-    if native(ctx) {
+    show_with(painter, at, shape, native(ctx))
+}
+
+fn show_with(painter: &Painter, at: Pos2, shape: Shape, native: bool) -> CursorIcon {
+    let ctx = painter.ctx();
+    if native {
         let scale = native_scale(ctx);
         if let Some(image) = cached_image(ctx, &shape, scale) {
             ctx.set_cursor_image(Some(image));

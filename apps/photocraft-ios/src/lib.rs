@@ -14,6 +14,9 @@ mod logging;
 /// Apple Pencil input; the mapping and state machine are platform-free and host-tested.
 pub mod pencil;
 #[cfg(target_os = "ios")]
+#[allow(unsafe_code)]
+mod scenes;
+#[cfg(target_os = "ios")]
 mod services;
 #[cfg(all(target_os = "ios", debug_assertions))]
 mod smoke;
@@ -76,10 +79,12 @@ pub fn run() -> Result<(), String> {
             eprintln!("PhotoCraft logging unavailable: {error}");
         }
         log::info!("Starting PhotoCraft iPadOS with Metal");
+        scenes::register();
         eframe::run_native(
             "PhotoCraft",
             native_options(),
             Box::new(|cc| {
+                scenes::attach(cc)?;
                 // The bootstrap uses winit's app-delegate lifecycle without UIKit scenes.
                 // Hide the status bar through the safe platform API so it cannot overlay
                 // egui's menu while scene-based safe-area handling is still unavailable.

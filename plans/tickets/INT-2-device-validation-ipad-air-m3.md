@@ -4,7 +4,7 @@
 - **Branch:** Integration / PR
 - **Recommended Model:** `GPT-6-Luna`
 - **Prerequisite:** `INT-1`
-- **Status:** BLOCKED (Pending INT-1 merge)
+- **Status:** PARTIAL (2026-10-12), iPad Air 13-inch M3 / iPadOS 27.0. Passed: signed Debug install/launch, Metal init, pressure-dependent width, Pencil hover cursor, new→save→reopen→edit→save. Provisional: tilt, palm-before-pen. Deferred by user: double-tap. Not yet tested: pinch/pan/rotate, resize/Split View/Stage Manager, picker cancel, layered PSD import, provider write-back + bookmarks after restart, background/termination recovery, cross-app clipboard, barrel rotation, eraser end.
 
 ---
 

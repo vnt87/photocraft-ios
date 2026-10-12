@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class HarnessTests(unittest.TestCase):
+    def test_ipados_27_declares_a_single_window_scene(self):
+        with (ROOT / 'PhotoCraft/Info.plist').open('rb') as source:
+            info = plistlib.load(source)
+        manifest = info['UIApplicationSceneManifest']
+        self.assertFalse(manifest['UIApplicationSupportsMultipleScenes'])
+        configurations = manifest['UISceneConfigurations']['UIWindowSceneSessionRoleApplication']
+        self.assertEqual(len(configurations), 1)
+        self.assertEqual(configurations[0]['UISceneClassName'], 'UIWindowScene')
+        self.assertEqual(configurations[0]['UISceneDelegateClassName'], 'PhotoCraftSceneDelegate')
+        self.assertNotIn('UISceneStoryboardFile', configurations[0])
+
     def test_rejects_resource_only_bundle(self):
         spec = importlib.util.spec_from_file_location('bundle_validation', ROOT / 'validate-bundle.py')
         module = importlib.util.module_from_spec(spec)
@@ -28,7 +39,6 @@ class HarnessTests(unittest.TestCase):
         with (ROOT / 'PhotoCraft/Info.plist').open('rb') as source:
             info = plistlib.load(source)
         self.assertFalse(info['UIRequiresFullScreen'])
-        self.assertNotIn('UIApplicationSceneManifest', info)
         self.assertEqual(len(info['CFBundleDocumentTypes']), 6)
         with (ROOT / 'PhotoCraft/PhotoCraft.entitlements').open('rb') as source:
             self.assertEqual(plistlib.load(source), {})

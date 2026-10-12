@@ -9,11 +9,11 @@ winit/eframe 0.36.2. The renderer allows only Metal.
 The root viewport follows the operating system's size instead of assuming an
 11-inch or 13-inch screen. No simulator or device size is hard-coded.
 
-The bootstrap hides the iOS status bar through winit's safe window API. Its current
-app-delegate lifecycle does not provide UIKit scenes for egui's scene-based
-safe-area query, so a visible status bar would overlap the editor menu. This
-immersive setting avoids a hard-coded inset; scene-aware safe-area integration
-remains part of later iPadOS lifecycle work.
+The runner registers a single UIKit window scene and attaches the winit window
+to it, supporting the scene lifecycle required by iPadOS 27. Native picker and
+Pencil lookups use that scene's window. The status bar remains hidden through
+winit's safe API. Multiwindow ownership and lifecycle/resizing acceptance remain
+follow-up work.
 
 Native services provide asynchronous document pickers, encoded export staging,
 security-scoped write-back bookmarks, PNG image clipboard access, browser dispatch,
@@ -22,11 +22,12 @@ Support rather than purgeable Caches. Files are imported into managed snapshots;
 recent files reopen those snapshots instead of refreshing external edits. Managed
 recents and recovery references are rebased when a supported iOS app container moves.
 
-The Pencil bridge is installed and host-tested; pressure, tilt, roll, hover,
-double-tap, and palm handling still require physical-device verification. Native
-clipboard/preferences round trips and picker presentation are verified on the
+On an iPad Air 13-inch M3 running iPadOS 27 the user verified pressure-dependent
+brush width and the Pencil hover cursor; tilt and palm-before-pen are provisional
+passes, and double-tap is deferred. Barrel roll and eraser behaviour are unverified.
+Native clipboard/preferences round trips and picker presentation are verified on the
 iPad Air M3 simulator with iPadOS 26.2. Provider selection, actual external saving,
-native cancellation, and physical-device behavior remain acceptance checks.
+native cancellation, touch gestures and multitasking remain acceptance checks.
 
 On iOS, startup diagnostics and log records are appended to
 `$HOME/Library/Application Support/ai.storyteller.photocraft/logs/runner.log`
@@ -38,6 +39,8 @@ cargo test -p photocraft-ios --lib
 cargo build --target aarch64-apple-ios -p photocraft-ios --lib
 cargo build --target aarch64-apple-ios-sim -p photocraft-ios --lib
 cargo xtask ios --sim
+# Physical iPad (development bundle id when the product id cannot be registered):
+cargo xtask ios --device --device-id <udid> --team <team id> --bundle-id <dev id>
 # Full Xcode installs can also open the desktop viewer:
 cargo xtask ios --sim --show-simulator
 ```
