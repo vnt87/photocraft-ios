@@ -14,6 +14,8 @@ mod logging;
 /// Apple Pencil input; the mapping and state machine are platform-free and host-tested.
 pub mod pencil;
 #[cfg(target_os = "ios")]
+mod safe_area;
+#[cfg(target_os = "ios")]
 #[allow(unsafe_code)]
 mod scenes;
 #[cfg(target_os = "ios")]
@@ -117,7 +119,7 @@ pub fn run() -> Result<(), String> {
                         }
                     });
                 }
-                Ok(Box::new(app))
+                Ok(Box::new(safe_area::SafeAreaProbe::new(app)))
             }),
         )
         .map_err(|error| format!("PhotoCraft iOS startup failed: {error}"))

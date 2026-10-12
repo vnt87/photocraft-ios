@@ -122,3 +122,12 @@ pub fn window(_mtm: MainThreadMarker) -> Option<Retained<UIWindow>> {
     let scene = scene()?;
     scene.keyWindow().or_else(|| scene.windows().iter().find(|window| window.isKeyWindow()))
 }
+
+/// Live UIKit metrics of the connected window in points: `[width, height, top, left, bottom, right]`.
+/// The insets are the safe-area insets that winit subtracts for the surface size.
+pub fn metrics(mtm: MainThreadMarker) -> Option<[f64; 6]> {
+    let window = window(mtm)?;
+    let bounds = window.bounds();
+    let insets = window.safeAreaInsets();
+    Some([bounds.size.width, bounds.size.height, insets.top, insets.left, insets.bottom, insets.right])
+}

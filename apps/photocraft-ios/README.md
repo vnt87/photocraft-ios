@@ -12,7 +12,9 @@ The root viewport follows the operating system's size instead of assuming an
 The runner registers a single UIKit window scene and attaches the winit window
 to it, supporting the scene lifecycle required by iPadOS 27. Native picker and
 Pencil lookups use that scene's window. The status bar remains hidden through
-winit's safe API. Multiwindow ownership and lifecycle/resizing acceptance remain
+winit's safe API. Safe areas: egui lays the UI out in `content_rect`, which excludes the home-indicator
+inset; the runner feeds UIKit's `safeAreaInsets` into each frame, because egui-winit reports zero until the
+scene's key window exists. `safe_area.rs` logs the egui and UIKit numbers whenever they change (runner.log). Multiwindow ownership and lifecycle/resizing acceptance remain
 follow-up work.
 
 Native services provide asynchronous document pickers, encoded export staging,
