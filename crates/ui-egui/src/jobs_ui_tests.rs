@@ -387,6 +387,22 @@ fn step_until(h: &mut Harness<'_, PhotocraftApp>, done: impl Fn(&PhotocraftApp) 
 }
 
 #[test]
+fn platform_saves_use_a_worker_even_when_background_jobs_are_disabled() {
+    let mut h = app_harness();
+    let gates = Gates { write: Arc::new(AtomicBool::new(true)), ..Gates::default() };
+    h.state_mut().background_jobs = false;
+    h.state_mut().services.save_requires_worker = true;
+    h.state_mut().services.save_file = Some(gates.save(None));
+    let result = h.state_mut().save_as(Some("/tmp/photocraft-test/platform.psd".into())).unwrap();
+    assert_eq!(result["pending"], true);
+    assert!(h.state().session.active().unwrap().is_dirty());
+    gates.encode.store(true, Ordering::Relaxed);
+    step_until(&mut h, |app| !app.saving());
+    assert_eq!(gates.written(), ["/tmp/photocraft-test/platform.psd"]);
+    assert!(!h.state().session.active().unwrap().is_dirty());
+}
+
+#[test]
 fn saves_run_in_the_background_and_are_recorded_when_they_end() {
     let mut h = app_harness();
     let gates = Gates { write: Arc::new(AtomicBool::new(true)), ..Gates::default() };

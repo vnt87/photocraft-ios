@@ -1,0 +1,43 @@
+[package]
+name = "photocraft-ios"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PhotoCraft native iPadOS app runner"
+
+[lib]
+name = "photocraft_ios"
+crate-type = ["staticlib", "rlib"]
+
+# The bridge exports the executable entry symbol for the Xcode-linked static library.
+# Unsafe is denied everywhere except this Apple-only audited entry module.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[dependencies]
+photocraft-engine = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-color = { workspace = true }
+photocraft-format = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-codecs = { workspace = true }
+serde_json = { workspace = true }
+photocraft-ui-egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit"] }
+egui = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# Already pinned by eframe and the desktop runner; safe UIKit window configuration.
+winit = { version = "=0.30.13", default-features = false }
+
+objc2 = "=0.6.4"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSError", "NSURL", "NSString", "NSObject", "NSDictionary", "NSFileManager", "NSPathUtilities", "NSFileCoordinator", "NSFilePresenter", "NSOperation", "block2"] }
+objc2-ui-kit = { version = "=0.3.2", default-features = false, features = ["std", "UIApplication", "UIWindow", "UIResponder", "UIViewController", "UIDocumentPickerViewController", "UIPasteboard", "UIImage", "block2", "objc2-uniform-type-identifiers"] }
+objc2-uniform-type-identifiers = { version = "=0.3.2", default-features = false, features = ["std", "UTType"] }
+block2 = "=0.6.2"
+dispatch2 = { version = "=0.3.1", default-features = false, features = ["std"] }

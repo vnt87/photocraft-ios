@@ -4,7 +4,7 @@
 - **Branch:** `feature/ipados-xcode-runner`
 - **Recommended Model:** `GPT-6.1-Sol`
 - **Prerequisite:** macOS with Xcode 27+ installed
-- **Status:** READY TO PICK UP
+- **Status:** COMPLETE — simulator bundle build, executable/signature validation, installation, and launch verified (2026-10-12)
 
 ---
 
@@ -70,5 +70,13 @@ Link the produced `libphotocraft_ios.a` and necessary system frameworks (`Metal`
 ---
 
 ## 4. Verification & Acceptance Criteria
-- [ ] Running `xcodebuild -project packaging/ios/PhotoCraft.xcodeproj -scheme PhotoCraft -destination 'generic/platform=iOS Simulator' build` succeeds.
-- [ ] Generated `.app` bundle contains valid `Info.plist` and code signature structure.
+- [x] Running `xcodebuild -project packaging/ios/PhotoCraft.xcodeproj -scheme PhotoCraft -destination 'generic/platform=iOS Simulator' build` succeeds.
+- [x] Generated `.app` bundle contains valid `Info.plist` and code signature structure.
+
+### Implementation evidence (2026-10-12)
+
+- Xcode 27.0 builds a signed universal arm64/x86_64 simulator executable.
+- Source-empty Xcode targets skip their normal linker; `link-rust.sh` explicitly links the Rust archive with Apple's driver before signing. `validate-bundle.py` rejects missing executables and checks Mach-O EXECUTE headers and signatures.
+- Five packaging tests pass, including regression coverage for the missing-executable failure.
+- Installed and visually verified on an iPad Air 11-inch M3 simulator running iPadOS 26.2. iPadOS 27 runtime and physical-device signing/testing remain unverified.
+- App icon assets remain a distribution follow-up.

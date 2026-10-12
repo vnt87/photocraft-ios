@@ -380,6 +380,9 @@ pub struct Services {
     /// Encode and write in one step on a worker thread, so a large save doesn't freeze the
     /// window (#2017). With background jobs on, saves use it instead of `export` and `write`.
     pub save_file: Option<SaveFileFn>,
+    /// A native export picker needs an encoded file and must keep the UI thread free while
+    /// waiting for its delegate. Such platforms use `save_file` even with background jobs off.
+    pub save_requires_worker: bool,
     /// File access used only by control/MCP requests. Interactive dialogs keep
     /// using `file_dialog` and `write` with the user's authority.
     pub automation_read: Option<AutomationReadFn>,
@@ -1347,7 +1350,7 @@ impl PhotocraftApp {
     /// `None` when the save went to a background job (#2017), which finishes it in
     /// [`jobs_ui::tick`].
     pub(crate) fn write_document(&mut self, path: String, settings: &ExportSettings, copy: bool) -> Result<Option<(String, Vec<String>)>, String> {
-        if self.background_jobs
+        if (self.background_jobs || self.services.save_requires_worker)
             && let Some(save) = self.services.save_file.clone()
         {
             return jobs_ui::start_save(self, path, settings.clone(), copy, save, false);
