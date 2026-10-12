@@ -4,7 +4,7 @@
 - **Branch:** Integration / PR
 - **Recommended Model:** `Claude Haiku 5.5`
 - **Prerequisite:** `INT-2`
-- **Status:** PARTIAL (2026-10-12): documents only demonstrated iPadOS capabilities; full sign-off waits on INT-2. The blanket yes for barrel rotation and eraser end below is NOT established.
+- **Status:** DOCS COMPLETE, SIGN-OFF PENDING INT-2 (2026-10-12): documents only demonstrated iPadOS capabilities; full sign-off waits on INT-2. The blanket yes for barrel rotation and eraser end below is NOT established.
 
 ---
 
@@ -28,5 +28,6 @@ Per PhotoCraft contributing rules, when hardware capabilities or platform target
 ---
 
 ## 3. Verification & Acceptance Criteria
-- [ ] Docs accurately describe iPadOS capabilities.
-- [ ] `cargo xtask scorecard` passes without unexpected regressions.
+- [x] Docs accurately describe iPadOS capabilities (2026-10-12): only demonstrated results are recorded; tilt is provisional, barrel rotation, eraser end and pressure curve are not verified, double-tap is deferred, and gestures and multitasking are not yet verified on hardware.
+- [x] `cargo xtask scorecard --check` passes (2026-10-12). The scorecard has no iPadOS checklist rows, so its content is unchanged.
+- [ ] Final sign-off waits on INT-2 hardware scenarios.

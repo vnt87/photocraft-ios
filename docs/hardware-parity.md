@@ -31,11 +31,11 @@ HDR display to verify.
 | Pressure | yes | yes (AppKit monitor) | yes (WM_POINTER), jumpy (#2046) | yes (XInput2) | via Xwayland only; GNOME 50 pen doesn't click (#2622), KDE (#2297) | yes | yes (confirmed on iPad Air M3, iPadOS 27.0) |
 | Tilt | yes | yes | **no** | yes | no | yes | provisional (functional but subtle; not measured) |
 | Barrel rotation | yes | yes (not applied to tip angle, #1301) | no | partial | no | yes (twist) | not verified |
-| Eraser end | yes | yes | no (#2285) | partial | no | partial | not verified (Apple Pencil has no eraser end) |
-| Hover | yes | – | – | – | – | – | yes (painted cursor follows the tip; confirmed on device) |
-| Double-tap | – | – | – | – | – | – | deferred, not tested |
+| Eraser end | yes | yes | no (#2285) | partial | no | partial | not verified |
+| Hover | not checked | – | – | – | – | – | yes (painted cursor follows the tip; confirmed on device) |
+| Double-tap | not checked | – | – | – | – | – | deferred, not tested |
 | WinTab driver mode | yes | – | no | – | – | – | – |
-| Pressure curve | Windows Ink / driver | global curve in Preferences (#2195) | same | same | same | same | same |
+| Pressure curve | Windows Ink / driver | global curve in Preferences (#2195) | same | same | same | same | not verified |
 
 The iPadOS column comes from `apps/photocraft-ios` (`src/pencil`) and a physical iPad Air 13-inch M3
 on iPadOS 27.0 (2026-10-12, Debug build). Palm-before-pen produced no stray marks (provisional, not
