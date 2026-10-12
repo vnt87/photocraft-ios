@@ -4,7 +4,7 @@
 - **Branch:** Integration / PR
 - **Recommended Model:** `GPT-6-Luna`
 - **Prerequisite:** `INT-1`
-- **Status:** PARTIAL (2026-10-12), iPad Air 13-inch M3 / iPadOS 27.0. Passed: signed Debug install/launch, Metal init, pressure-dependent width, Pencil hover cursor, new→save→reopen→edit→save. Provisional: tilt, palm-before-pen. Deferred by user: double-tap. Not yet tested: pinch/pan/rotate, resize/Split View/Stage Manager, picker cancel, layered PSD import, provider write-back + bookmarks after restart, background/termination recovery, cross-app clipboard, barrel rotation, eraser end.
+- **Status:** USER-REPORTED PASS (2026-10-12), iPad Air 13-inch M3 / iPadOS 27.0, dev build `ai.storyteller.photocraft.dev.t5cckbxfs8`. Earlier passes: signed install/launch, Metal init, pressure width, Pencil hover, new→save→reopen→edit→save. Provisional: tilt, palm-before-pen. Deferred: double-tap. The user reports all remaining scenarios below as successful (gestures, multitasking, picker cancel, layered PSD import, provider write-back across restart, background/kill recovery, cross-app clipboard). These are user observations, not instrumented: `runner.log` has no panic, error or warning but records only startup. Not captured: file providers, PSD file, and whether recovery was offered.
 
 ---
 

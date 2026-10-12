@@ -39,7 +39,7 @@ HDR display to verify.
 
 The iPadOS column comes from `apps/photocraft-ios` (`src/pencil`) and a physical iPad Air 13-inch M3
 on iPadOS 27.0 (2026-10-12, Debug build). Palm-before-pen produced no stray marks (provisional, not
-exhaustive). Not yet verified: pinch/pan/rotate gestures on hardware, multitasking, provider write-back.
+exhaustive). Gestures (pinch, pan, rotate), multitasking, picker cancel, layered PSD import, provider write-back and background recovery were reported successful by the user on 2026-10-12; these are user observations, not instrumented tests. Release builds: simulator only.
 
 ## Displays and colour
 
