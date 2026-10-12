@@ -19,6 +19,10 @@
 //!   winit doesn't (it would have to share winit's connection), so with a pen attached the
 //!   desktop app opens its window through Xwayland, which reports tablet valuators to the X11
 //!   reader. `PHOTOCRAFT_NATIVE_WAYLAND=1` keeps native Wayland, where the pen has no input.
+//! - **iPadOS**: winit forwards Apple Pencil touches as `WindowEvent::Touch` with force only. The
+//!   iOS runner (`apps/photocraft-ios/src/pencil`) writes pressure, tilt, roll and hover into the
+//!   [`StylusFeed`] and marks the pen's touch ids ([`StylusFeed::mark_pen_touch`]) so the touch
+//!   is not read twice here nor taken for a finger by the gesture recognizer.
 //!
 //! Preferences › Tools › Use Tablet Pressure off makes a pen paint like a mouse. Flipping the pen
 //! to its eraser end selects the Eraser tool and flipping back restores the previous tool, as in
@@ -72,7 +76,13 @@ struct FeedState {
     latest: Option<PenSample>,
     /// Every sample set since the canvas last drained them, oldest first.
     queue: VecDeque<PenSample>,
+    /// Touch ids (`egui::TouchId`) the platform identified as pen contacts, newest last.
+    pen_touches: VecDeque<u64>,
 }
+
+/// Pen touch ids a [`StylusFeed`] remembers. Ids are never explicitly retired (a contact's end
+/// reaches egui a frame after the platform saw it), so the oldest fall out of this window.
+const PEN_TOUCHES: usize = 32;
 
 /// Shared state a platform backend writes pen samples into. Cloning shares it. Each sample both
 /// becomes the current one and is queued, so a frame sees every sample the pen reported, in
@@ -101,6 +111,29 @@ impl StylusFeed {
     /// The samples set since the last drain, oldest first.
     pub fn drain(&self) -> Vec<PenSample> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).queue.drain(..).collect()
+    }
+
+    /// The platform saw touch `id` (the id egui's `Event::Touch` will carry) start as a pen
+    /// contact. A backend that writes pen samples into this feed *and* lets the pen reach egui as
+    /// a touch (iPadOS: winit forwards every `UITouch`) marks it, so the touch is neither counted
+    /// as a finger by the gesture recognizer nor read again as a pressure-only touch sample.
+    pub fn mark_pen_touch(&self, id: u64) {
+        let mut g = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        g.pen_touches.retain(|&t| t != id);
+        if g.pen_touches.len() >= PEN_TOUCHES {
+            g.pen_touches.pop_front();
+        }
+        g.pen_touches.push_back(id);
+    }
+
+    /// Touch `id` started as a finger: forget it as a pen (platforms reuse touch ids).
+    pub fn mark_finger_touch(&self, id: u64) {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).pen_touches.retain(|&t| t != id);
+    }
+
+    /// Was touch `id` marked as a pen contact?
+    pub fn is_pen_touch(&self, id: u64) -> bool {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).pen_touches.contains(&id)
     }
 }
 
@@ -186,7 +219,11 @@ impl Stylus {
         self.frame = self.feed.drain();
         self.current = None;
         for e in events {
-            if let egui::Event::Touch { phase, force, .. } = e {
+            if let egui::Event::Touch { id, phase, force, .. } = e {
+                // A pen the platform also feeds (with tilt) is read from the feed, not twice.
+                if self.feed.is_pen_touch(id.0) {
+                    continue;
+                }
                 match phase {
                     egui::TouchPhase::Start | egui::TouchPhase::Move => {
                         if let Some(f) = force.filter(|f| f.is_finite()) {
@@ -409,6 +446,40 @@ mod tests {
             feed.set(Some(pen((i % 100) as f32 / 100.0)));
         }
         assert_eq!(feed.drain().len(), FEED_QUEUE);
+    }
+
+    #[test]
+    fn marked_pen_touches_are_remembered_in_a_bounded_window() {
+        let feed = StylusFeed::default();
+        assert!(!feed.is_pen_touch(7));
+        feed.mark_pen_touch(7);
+        feed.mark_pen_touch(7);
+        assert!(feed.is_pen_touch(7));
+        // A finger reusing the id clears it.
+        feed.mark_finger_touch(7);
+        assert!(!feed.is_pen_touch(7));
+        for id in 0..(PEN_TOUCHES as u64 + 5) {
+            feed.mark_pen_touch(id);
+        }
+        assert!(!feed.is_pen_touch(0), "the oldest fall out");
+        assert!(feed.is_pen_touch(PEN_TOUCHES as u64 + 4));
+        assert_eq!(feed.0.lock().unwrap().pen_touches.len(), PEN_TOUCHES);
+    }
+
+    #[test]
+    fn a_marked_pen_touch_is_read_from_the_feed_not_its_touch_force() {
+        let mut s = Stylus::default();
+        s.feed.mark_pen_touch(0);
+        s.feed.set(Some(PenSample { pressure: 0.6, tilt_x: 20.0, ..Default::default() }));
+        // winit's force for the same contact (no tilt, different normalisation) is ignored.
+        s.update(&[touch(egui::TouchPhase::Start, Some(0.9))]);
+        assert_eq!(s.sample().map(|p| (p.pressure, p.tilt_x)), Some((0.6, 20.0)));
+        assert_eq!(s.frame.len(), 1, "one sample, not the feed's plus the touch's");
+        // Its lift does not leave a stale touch force behind either.
+        s.feed.set(None);
+        s.update(&[touch(egui::TouchPhase::End, None)]);
+        s.update(&[]);
+        assert_eq!(s.pressure(), 1.0);
     }
 
     #[test]

@@ -10,6 +10,12 @@
 //! - Palm rejection: a lone contact never produces a delta, and [`GestureRecognizer::blocks_painting`]
 //!   tells the canvas to ignore the emulated pointer of a lone finger while a stylus is active
 //!   (touching or hovering), and of any two-finger gesture.
+//! - Pen contacts: where the platform tells pen from finger touches ([`GestureRecognizer::feed_frame_with`],
+//!   iPadOS through `StylusFeed::is_pen_touch`), a pen touch is never a finger: it is not a
+//!   gesture contact nor a palm. egui-winit drives its emulated pointer from the first touch that
+//!   lands while no touch owns it; when that touch is the pen, a palm resting on the canvas does
+//!   not block the pen's stroke. When the palm landed first it owns the pointer and painting stays
+//!   blocked (egui-winit gives the pointer to the pen only after the palm lifts).
 //!
 //! Never panics: non-finite positions are dropped, zero finger distance neither zooms nor rotates.
 
@@ -80,8 +86,11 @@ pub struct GestureRecognizer {
     last_centroid: Option<Pos2>,
     /// The egui frame [`Self::feed_frame`] last ran in.
     last_frame: Option<u64>,
-    /// Contacts currently down (tracked or not), for [`Self::blocks_painting`].
+    /// Finger contacts currently down (tracked or not), for [`Self::blocks_painting`].
     down: Vec<u64>,
+    /// The touch driving egui-winit's emulated pointer (the first one to land while none did),
+    /// and whether it is a pen.
+    pointer: Option<(u64, bool)>,
 }
 
 fn finite(p: Pos2) -> bool {
@@ -123,8 +132,19 @@ impl GestureRecognizer {
 
     /// Should the canvas ignore the emulated pointer (no painting, no tool drag)? True during a
     /// two-finger gesture, and for a lone finger while a stylus is touching or hovering (palm).
+    /// A pen that owns the emulated pointer is never blocked by a resting palm.
     pub fn blocks_painting(&self, stylus_active: bool) -> bool {
-        self.is_gesturing() || (stylus_active && !self.down.is_empty())
+        let pen_drives_pointer = matches!(self.pointer, Some((_, true)));
+        self.is_gesturing() || (stylus_active && !self.down.is_empty() && !pen_drives_pointer)
+    }
+
+    /// Mirror egui-winit's choice of the touch that drives the emulated pointer.
+    fn track_pointer(&mut self, id: u64, phase: TouchPhase, pen: bool) {
+        match phase {
+            TouchPhase::Start if self.pointer.is_none() => self.pointer = Some((id, pen)),
+            TouchPhase::End | TouchPhase::Cancel if self.pointer.is_some_and(|(p, _)| p == id) => self.pointer = None,
+            _ => {}
+        }
     }
 
     fn baseline(&mut self) {
@@ -210,6 +230,12 @@ impl GestureRecognizer {
     /// Feed a frame's raw events once per egui frame (the canvas can run in several passes; later
     /// passes of the same frame return nothing). Contacts that start outside `area` are ignored.
     pub fn feed_frame(&mut self, frame: u64, events: &[egui::Event], area: Rect, stylus_active: bool) -> Vec<GestureDelta> {
+        self.feed_frame_with(frame, events, area, stylus_active, |_| false)
+    }
+
+    /// [`Self::feed_frame`] where `is_pen(touch id)` tells pen contacts from fingers: pen touches
+    /// only decide who drives the emulated pointer; they never gesture and are never a palm.
+    pub fn feed_frame_with(&mut self, frame: u64, events: &[egui::Event], area: Rect, stylus_active: bool, is_pen: impl Fn(u64) -> bool) -> Vec<GestureDelta> {
         if self.last_frame.replace(frame) == Some(frame) {
             return Vec::new();
         }
@@ -217,6 +243,12 @@ impl GestureRecognizer {
         for e in events {
             let egui::Event::Touch { device_id: _, id, phase, pos, force: _ } = e else { continue };
             let phase = TouchPhase::from(*phase);
+            // egui-winit hands the pointer to a touch wherever it lands, so track it first.
+            let pen = is_pen(id.0);
+            self.track_pointer(id.0, phase, pen);
+            if pen {
+                continue;
+            }
             if phase == TouchPhase::Start && !area.contains(*pos) {
                 continue;
             }
@@ -483,6 +515,55 @@ mod tests {
         assert!((out[0].zoom_factor - 2.0).abs() < 1e-5);
         assert_eq!(r.touch_count(), 2, "the outside contact is not tracked");
         assert!(r.feed_frame(1, &evs, area, false).is_empty(), "same frame, second pass");
+    }
+
+    fn ev(id: u64, phase: egui::TouchPhase, x: f32, y: f32) -> egui::Event {
+        egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(id), phase, pos: pos2(x, y), force: None }
+    }
+
+    #[test]
+    fn a_pen_touch_is_neither_a_palm_nor_a_gesture_finger() {
+        use egui::TouchPhase::{End, Move, Start};
+        let area = Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0));
+        let is_pen = |id: u64| id == 9;
+        let mut r = GestureRecognizer::default();
+        // The pen alone, stylus active: it paints (before, it counted as a lone finger).
+        r.feed_frame_with(1, &[ev(9, Start, 10.0, 10.0)], area, true, is_pen);
+        assert_eq!(r.touch_count(), 0);
+        assert!(!r.blocks_painting(true));
+        // A palm lands while the pen draws: the pen owns the pointer, the stroke goes on.
+        r.feed_frame_with(2, &[ev(1, Start, 200.0, 300.0), ev(9, Move, 20.0, 10.0)], area, true, is_pen);
+        assert_eq!(r.touch_count(), 1);
+        assert!(!r.blocks_painting(true));
+        // A second finger with the palm is still a gesture, and the pen never joins one.
+        let d = r.feed_frame_with(3, &[ev(2, Start, 300.0, 300.0), ev(9, Move, 90.0, 90.0)], area, true, is_pen);
+        assert!(d.is_empty() && r.is_gesturing() && r.blocks_painting(true));
+        r.feed_frame_with(4, &[ev(2, End, 300.0, 300.0), ev(9, End, 90.0, 90.0)], area, true, is_pen);
+        // The pen lifted: the resting palm is a palm again while the pen hovers.
+        assert!(r.blocks_painting(true));
+        assert!(!r.blocks_painting(false));
+        r.feed_frame_with(5, &[ev(1, End, 200.0, 300.0)], area, true, is_pen);
+        assert!(!r.blocks_painting(true));
+    }
+
+    #[test]
+    fn a_palm_that_landed_first_keeps_blocking_the_pen() {
+        use egui::TouchPhase::{End, Start};
+        let area = Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0));
+        let is_pen = |id: u64| id == 9;
+        let mut r = GestureRecognizer::default();
+        // egui-winit gives the pointer to the palm; the pen's touch never drives it.
+        r.feed_frame_with(1, &[ev(1, Start, 200.0, 300.0), ev(9, Start, 10.0, 10.0)], area, true, is_pen);
+        assert!(r.blocks_painting(true));
+        // The pointer owner is tracked even when it lands outside the canvas.
+        r.feed_frame_with(2, &[ev(1, End, 200.0, 300.0), ev(9, End, 10.0, 10.0)], area, true, is_pen);
+        r.feed_frame_with(3, &[ev(5, Start, 900.0, 900.0), ev(9, Start, 10.0, 10.0), ev(1, Start, 20.0, 20.0)], area, true, is_pen);
+        assert_eq!(r.pointer, Some((5, false)));
+        assert!(r.blocks_painting(true), "a finger owns the pointer and the palm is down");
+        // Without a classifier every touch is a finger, as before.
+        let mut plain = GestureRecognizer::default();
+        plain.feed_frame(1, &[ev(9, Start, 10.0, 10.0)], area, true);
+        assert!(plain.blocks_painting(true));
     }
 
     #[test]

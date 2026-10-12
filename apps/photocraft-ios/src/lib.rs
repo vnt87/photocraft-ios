@@ -11,6 +11,8 @@ mod clipboard;
 mod documents;
 #[cfg(any(target_os = "ios", test))]
 mod logging;
+/// Apple Pencil input; the mapping and state machine are platform-free and host-tested.
+pub mod pencil;
 #[cfg(target_os = "ios")]
 mod services;
 #[cfg(all(target_os = "ios", debug_assertions))]
@@ -88,6 +90,10 @@ pub fn run() -> Result<(), String> {
                 let mut app = photocraft_ui_egui::PhotocraftApp::new(photocraft_engine::Session::new(), ios_services());
                 if let Some(render_state) = cc.wgpu_render_state.clone() {
                     app.set_wgpu(render_state);
+                }
+                // Apple Pencil tilt, roll, hover and double-tap (winit forwards only touch force).
+                if let Err(error) = pencil::install(app.stylus.feed.clone(), &cc.egui_ctx) {
+                    log::error!("Apple Pencil input unavailable: {error}");
                 }
                 if app.services.save_file.is_none() {
                     photocraft_ui_egui::notices::post(

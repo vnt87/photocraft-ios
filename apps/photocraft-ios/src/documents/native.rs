@@ -130,13 +130,13 @@ fn show_picker(
     picker.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     // The worker remains cancellable while this main-queue presentation is pending.
     // Once presented, UIKit can write on selection; only its Cancel button can cancel.
-    if let Some(ctl) = ctl {
-        if let Err(error) = ctl.commit() {
-            if let Some(completion) = delegate.ivars().completion.borrow_mut().take() {
-                fail_completion(completion, error);
-            }
-            return;
+    if let Some(ctl) = ctl
+        && let Err(error) = ctl.commit()
+    {
+        if let Some(completion) = delegate.ivars().completion.borrow_mut().take() {
+            fail_completion(completion, error);
         }
+        return;
     }
     ACTIVE.with(|active| *active.borrow_mut() = Some((delegate, picker.clone())));
     root.presentViewController_animated_completion(&picker, true, None);

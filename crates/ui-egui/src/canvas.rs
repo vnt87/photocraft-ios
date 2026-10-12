@@ -2777,7 +2777,8 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         let frame = ctx.cumulative_frame_nr();
         let events = ui.input(|i| i.events.clone());
         let mut rec = ctx.data_mut(|d| d.get_temp::<crate::gestures::GestureRecognizer>(gesture_id)).unwrap_or_default();
-        let deltas = rec.feed_frame(frame, &events, rect, stylus_active);
+        let feed = &app.stylus.feed;
+        let deltas = rec.feed_frame_with(frame, &events, rect, stylus_active, |id| feed.is_pen_touch(id));
         for d in &deltas {
             let cur = ViewXform { zoom: view.zoom / ppp, center: view.center, rotation: view.rotation, ..xf };
             crate::gestures::apply_to_view(&mut view, &cur, d, ppp);
