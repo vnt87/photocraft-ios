@@ -61,6 +61,8 @@ checks pass. MAC-3 platform services, MAC-4 Pencil input, MAC-5 automation, the 
 track, and physical-device/iPadOS 27 runtime validation remain open. Documents are
 session-only in the bootstrap.
 
+**2026-10-12 (Linux session):** LINUX-1..4 are done. While Codex was rate-limited the Linux session also wrote the Linux-checkable parts of MAC-4 (Pencil mapping, bridge and UIKit hooks) and MAC-5 (`cargo xtask ios`) on `feature/ipados-linux-assist`, type-checked for both iOS targets but never run. Read `plans/HANDOFF-linux-to-mac.md` before continuing; MAC-3 persistence and all device verification remain.
+
 ### Phase 1: Linux Track (Claude Code on Linux Server)
 - [LINUX-1: Pure Rust Touch Gesture Engine & Math](file:///Users/naam.vu/Downloads/Github/photocraft-ios/plans/tickets/LINUX-1-gesture-engine.md) — *Model: Opus 5.5 (Arch) + Sonnet 5.5 (Code)*
 - [LINUX-2: Synthetic Multi-Touch Test Harness](file:///Users/naam.vu/Downloads/Github/photocraft-ios/plans/tickets/LINUX-2-touch-test-harness.md) — *Model: Sonnet 5.5*

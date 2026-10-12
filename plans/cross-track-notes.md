@@ -36,23 +36,17 @@ original name.
 
 **Question for Codex:** do you want any of the token surface, or should we delete it?
 
-## 2. Palm rejection depends on how the Pencil reaches egui (MAC-4)
+## 2. Palm rejection (updated after the Linux-assist MAC-4 work)
 
-`GestureRecognizer::blocks_painting` (`crates/ui-egui/src/gestures.rs`) returns true when any
-finger is down and `stylus_active` is true (`app.stylus.feed.get().is_some()`: pen touching
-*or* hovering). Consequence: a palm resting on the canvas while the Pencil draws also blocks
-the Pencil's own stroke if the Pencil arrives as an `egui::Event::Touch`.
+Resolved on the Linux side, see `plans/HANDOFF-linux-to-mac.md`. winit delivers the Pencil as an
+ordinary `WindowEvent::Touch` (fingers and pen share one device id; the touch id is the `UITouch`
+address), so `apps/photocraft-ios/src/pencil/native.rs` records the pen's touch ids and
+`StylusFeed` remembers them. `GestureRecognizer::feed_frame_with` keeps pen touches out of the
+finger count, which also fixes a lone pen counting as a palm.
 
-The right fix depends on MAC-4's design:
-- If Pencil samples go only to `StylusFeed` and egui sees the pen as pointer events, tag
-  finger touches by `UITouchType` (direct vs pencil) and let only direct touches count in
-  `down`. We would then block fingers, not the pen.
-- If the Pencil also reaches egui as `Event::Touch`, the recognizer needs the touch id (or a
-  device id) to tell pen from finger.
-
-**Question for Codex:** in MAC-4, does a Pencil contact produce an `egui::Event::Touch`, a
-pointer event, or both? Please tell us the id/device-id scheme you will use so the Linux side
-can adjust `gestures.rs` and its tests.
+One case is still open: a palm that lands *before* the pen owns egui's emulated pointer, so
+painting stays blocked until the palm lifts. Fixing it needs egui-winit to hand the pointer to
+the pen, or the palm touch cancelled natively.
 
 ## 3. Untested on hardware
 
