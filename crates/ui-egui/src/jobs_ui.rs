@@ -104,6 +104,7 @@ impl Drop for WorkerDone {
 /// What a save worker gets (see [`crate::Services::save_file`]): the job's progress and
 /// cancellation, and [`commit`](Self::commit), the point after which the save can no longer
 /// be cancelled.
+#[derive(Clone)]
 pub struct SaveCtl {
     pub job: JobCtx,
     state: Arc<SaveState>,

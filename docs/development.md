@@ -48,6 +48,15 @@ Image code is slow at `opt-level 0`, so the workspace profile builds dependencie
 
 The dev profile builds with `debug = "line-tables-only"`: panic backtraces keep file and line, and test binaries link about twice as fast. To inspect local variables in a debugger, build with `CARGO_PROFILE_DEV_DEBUG=true`.
 
+### iPadOS runner
+
+The native iPadOS runner lives in `apps/photocraft-ios`; its Xcode bundle harness is
+`packaging/ios/PhotoCraft.xcodeproj`. See `packaging/ios/README.md` for simulator builds,
+signing, and the currently supported launch flow. Rust supplies the executable entry point
+and the existing egui editor; no Swift, Objective-C source, or webview shell is needed.
+UIKit document services and Apple Pencil integration are separate follow-up tickets in
+`plans/tickets/`. Building the bundle does not establish physical-device input or file-service parity.
+
 ### Faster test loops
 
 Most of a `cargo test` run is linking test binaries and running them one after another. While iterating:

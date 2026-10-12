@@ -4,7 +4,7 @@
 - **Branch:** `feature/ipados-xcode-runner`
 - **Recommended Model:** `GPT-6.1-Sol`
 - **Prerequisite:** `MAC-1`
-- **Status:** READY TO PICK UP
+- **Status:** COMPLETE — bootstrap compiles for device/simulator and renders on the simulator (2026-10-12); platform services and Pencil remain MAC-3/MAC-4
 
 ---
 
@@ -78,9 +78,18 @@ block2 = "=0.6.2"
 ---
 
 ## 4. Verification & Acceptance Criteria
-- [ ] Builds with zero errors:
+- [x] Builds with zero errors:
   ```bash
   cargo check --target aarch64-apple-ios -p photocraft-ios
   cargo check --target aarch64-apple-ios-sim -p photocraft-ios
   ```
-- [ ] No `unwrap()` or `expect()` anywhere in non-test code.
+- [x] No `unwrap()` or `expect()` anywhere in non-test code.
+
+### Implementation evidence (2026-10-12)
+
+- The crate supplies a static library plus an rlib for tests. Its iOS-only module exports C `main` and `photocraft_ios_main`; no separate Cargo executable or dynamic library is needed for the Xcode bundle.
+- Metal-only renderer reuses PhotoCraft's device-limit policy, with regression coverage for simulator adapters exposing 15 inter-stage shader variables instead of the default 16.
+- Eight runner tests and host/device/simulator Clippy checks pass with warnings denied.
+- App-container logging works. The native window hides the status bar for the immersive bootstrap to prevent menu overlap while winit uses the app-delegate lifecycle; scene-safe-area handling remains follow-up work.
+- Screenshot and sustained process checks verify editor launch on the iPad Air M3 simulator with iPadOS 26.2. Physical hardware and iPadOS 27 runtime behavior remain unverified.
+- File opening, persistent saves, recovery, and image clipboard remain disabled until MAC-3; documents are session-only.

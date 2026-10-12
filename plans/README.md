@@ -55,6 +55,12 @@ Use this matrix when prompting agents in each session:
 
 ## 3. Ticket Directory & Status
 
+**2026-10-12:** MAC-1 and the MAC-2 bootstrap are implemented and verified on the
+iPad Air M3 simulator (iPadOS 26.2, built with Xcode 27). Device and simulator Rust
+checks pass. MAC-3 platform services, MAC-4 Pencil input, MAC-5 automation, the Linux
+track, and physical-device/iPadOS 27 runtime validation remain open. Documents are
+session-only in the bootstrap.
+
 ### Phase 1: Linux Track (Claude Code on Linux Server)
 - [LINUX-1: Pure Rust Touch Gesture Engine & Math](file:///Users/naam.vu/Downloads/Github/photocraft-ios/plans/tickets/LINUX-1-gesture-engine.md) — *Model: Opus 5.5 (Arch) + Sonnet 5.5 (Code)*
 - [LINUX-2: Synthetic Multi-Touch Test Harness](file:///Users/naam.vu/Downloads/Github/photocraft-ios/plans/tickets/LINUX-2-touch-test-harness.md) — *Model: Sonnet 5.5*
@@ -81,3 +87,4 @@ Use this matrix when prompting agents in each session:
 2. **Never Break WASM:** Every change must compile under `cargo check --target wasm32-unknown-unknown` (`cargo xtask wasm`).
 3. **Layering is Enforced:** Crates depend only downward (`cargo xtask layers`).
 4. **Clean-Room:** All Apple platform integrations are implemented via public specs and official APIs.
+5. **Isolated Native Interop:** `unsafe` is permitted only in the Apple bridge modules specified in `AGENTS.md`, behind safe Rust interfaces and with documented safety guarantees. Shared Rust logic remains safe.
