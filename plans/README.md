@@ -55,13 +55,19 @@ Use this matrix when prompting agents in each session:
 
 ## 3. Ticket Directory & Status
 
-**2026-10-12:** MAC-1 and the MAC-2 bootstrap are implemented and verified on the
-iPad Air M3 simulator (iPadOS 26.2, built with Xcode 27). Device and simulator Rust
-checks pass. MAC-3 platform services, MAC-4 Pencil input, MAC-5 automation, the Linux
-track, and physical-device/iPadOS 27 runtime validation remain open. Documents are
-session-only in the bootstrap.
+**2026-10-12 (Mac follow-up):** The Linux-assist branch is integrated. MAC-1/MAC-2
+and MAC-5 Debug simulator build/install/launch are verified with Xcode 27 on the
+iPad Air M3 simulator running iPadOS 26.2. MAC-3 services are implemented: native
+clipboard/preferences round trips, browser dispatch, picker presentation, and
+host recovery tests pass. Actual provider selection/save/cancel and lifecycle
+behavior still need device acceptance. MAC-4 is host-tested and installs without
+startup errors on the simulator; Pencil capabilities remain unverified on hardware.
 
-**2026-10-12 (Linux session):** LINUX-1..4 are done. While Codex was rate-limited the Linux session also wrote the Linux-checkable parts of MAC-4 (Pencil mapping, bridge and UIKit hooks) and MAC-5 (`cargo xtask ios`) on `feature/ipados-linux-assist`, type-checked for both iOS targets but never run. Read `plans/HANDOFF-linux-to-mac.md` before continuing; MAC-3 persistence and all device verification remain.
+LINUX-1/2/4 are integrated. The redundant LINUX-3 token API was removed in favor
+of managed snapshots and sidecar bookmarks, with legacy-preferences regression
+coverage. Device signing/deployment, Release runs, iPadOS 27 runtime behavior,
+scene-aware layout, and physical Pencil validation remain open. See
+`plans/MAC-simulator-validation.md` and the historical Linux handoff.
 
 ### Phase 1: Linux Track (Claude Code on Linux Server)
 - [LINUX-1: Pure Rust Touch Gesture Engine & Math](file:///Users/naam.vu/Downloads/Github/photocraft-ios/plans/tickets/LINUX-1-gesture-engine.md) — *Model: Opus 5.5 (Arch) + Sonnet 5.5 (Code)*

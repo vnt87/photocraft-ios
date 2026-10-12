@@ -23,6 +23,10 @@ pub fn run(app: &mut PhotocraftApp, mode: &str) -> Result<(), String> {
     log::info!("iOS service smoke: sandbox preferences roundtrip passed");
     match mode {
         "clipboard" => {}
+        "url" => {
+            app.services.open_url.as_ref().ok_or("URL service unavailable")?("https://example.com")?;
+            log::info!("iOS service smoke: system browser requested");
+        }
         "open" => {
             app.open_dialog_file()?;
             log::info!("iOS service smoke: open picker requested");

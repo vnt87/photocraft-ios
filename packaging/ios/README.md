@@ -10,7 +10,12 @@ xcodebuild -project packaging/ios/PhotoCraft.xcodeproj -scheme PhotoCraft \
   -configuration Debug -destination 'generic/platform=iOS Simulator' build
 python3 -m unittest discover -s packaging/ios/tests -v
 python3 packaging/ios/validate-bundle.py path/to/PhotoCraft.app
+cargo xtask ios --sim
 ```
+
+`xtask ios --sim` builds, boots, installs, and launches through the simulator CLI.
+It also works with CLI-only Xcode installations. Add `--show-simulator` to open the
+desktop Simulator viewer when that application is installed.
 
 The build phase resolves Cargo from `CARGO` or `$HOME/.cargo/bin` and builds only
 `--lib`. It maps arm64 device, arm64 Simulator, and Intel Simulator architectures

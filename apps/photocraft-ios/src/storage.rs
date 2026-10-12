@@ -13,6 +13,73 @@ use std::{
 const MAX_PREFS: u64 = 4 * 1024 * 1024;
 const MAX_METADATA: u64 = 64 * 1024;
 
+fn container_prefix(prefix: &str) -> bool {
+    let Some(prefix) = prefix.strip_prefix('/') else { return false };
+    let parts: Vec<_> = prefix.split('/').collect();
+    if parts.iter().any(|part| part.is_empty() || *part == "." || *part == "..") {
+        return false;
+    }
+    let uuid = |value: &str| {
+        value.len() == 36 && value.bytes().enumerate().all(|(i, byte)| if matches!(i, 8 | 13 | 18 | 23) { byte == b'-' } else { byte.is_ascii_hexdigit() })
+    };
+    match parts.as_slice() {
+        ["var", "mobile", "Containers", "Data", "Application", app] | ["private", "var", "mobile", "Containers", "Data", "Application", app] => uuid(app),
+        ["Users", _, "Library", "Developer", "CoreSimulator", "Devices", device, "data", "Containers", "Data", "Application", app] => uuid(device) && uuid(app),
+        _ => false,
+    }
+}
+
+/// App updates may move the container. Only existing managed snapshots are relocated;
+/// external paths and malformed or escaping paths retain their original meaning.
+fn remap_managed_path(path: &str, root: &Path) -> Option<String> {
+    const MARKER: &str = "/Library/Application Support/ai.storyteller.photocraft/documents/";
+    if path.len() > 4096 || !Path::new(path).is_absolute() || path.contains(['\\', '\0']) {
+        return None;
+    }
+    let (prefix, relative) = path.split_once(MARKER)?;
+    if !container_prefix(prefix) {
+        return None;
+    }
+    if Path::new(path).components().any(|c| !matches!(c, Component::RootDir | Component::Normal(_))) {
+        return None;
+    }
+    // Check the raw segments too: Path::components normalizes embedded `.` and empty segments.
+    let mut parts = relative.split('/');
+    let (reservation, name) = (parts.next()?, parts.next()?);
+    if parts.next().is_some() || [reservation, name].iter().any(|part| part.is_empty() || *part == "." || *part == "..") {
+        return None;
+    }
+    let documents = root.join("documents");
+    let destination = documents.join(reservation).join(name);
+    if !std::fs::symlink_metadata(&destination).ok()?.is_file() {
+        return None;
+    }
+    let canonical_root = root.canonicalize().ok()?;
+    let canonical_documents = documents.canonicalize().ok()?;
+    let canonical_destination = destination.canonicalize().ok()?;
+    if !canonical_documents.starts_with(&canonical_root) || !canonical_destination.starts_with(&canonical_documents) {
+        return None;
+    }
+    let destination = destination.to_str()?;
+    (destination != path).then(|| destination.to_owned())
+}
+
+fn remap_recent_files(text: String, root: &Path) -> String {
+    if text.len() as u64 > MAX_PREFS {
+        return text;
+    }
+    let Ok(mut prefs) = serde_json::from_str::<serde_json::Value>(&text) else { return text };
+    let Some(recent) = prefs.get_mut("fileHandling").and_then(|p| p.get_mut("recentFiles")).and_then(serde_json::Value::as_array_mut) else { return text };
+    let mut changed = false;
+    for entry in recent {
+        if let Some(path) = entry.as_str().and_then(|p| remap_managed_path(p, root)) {
+            *entry = path.into();
+            changed = true;
+        }
+    }
+    if changed { serde_json::to_string(&prefs).unwrap_or(text) } else { text }
+}
+
 /// Resolve only the supplied sandbox HOME; never fall back to desktop configuration paths.
 pub fn app_support_dir(home: Option<OsString>) -> Result<PathBuf, String> {
     let home = PathBuf::from(home.ok_or("iOS sandbox HOME is unavailable")?);
@@ -95,9 +162,13 @@ pub fn install(services: &mut Services, root: PathBuf) -> Result<(), String> {
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let prefs = root.join("preferences.json");
     let prefs_load = prefs.clone();
+    let prefs_root = root.clone();
     services.import = Some(Box::new(import_document));
     services.export = Some(Box::new(export_document));
-    services.load_prefs = Some(Box::new(move || String::from_utf8(bounded_read(&prefs_load, MAX_PREFS).ok()?).ok()));
+    services.load_prefs = Some(Box::new(move || {
+        let text = String::from_utf8(bounded_read(&prefs_load, MAX_PREFS).ok()?).ok()?;
+        Some(remap_recent_files(text, &prefs_root))
+    }));
     services.save_prefs = Some(Box::new(move |text| {
         if text.len() as u64 > MAX_PREFS {
             return Err("preferences exceed their size limit".into());
@@ -136,7 +207,7 @@ pub fn install(services: &mut Services, root: PathBuf) -> Result<(), String> {
             .map(|e| Recoverable {
                 key: e.info.key.clone(),
                 name: e.info.document_name.clone(),
-                path: e.info.original_path.clone(),
+                path: e.info.original_path.as_deref().and_then(|p| remap_managed_path(p, &root)).or_else(|| e.info.original_path.clone()),
                 load: Box::new(move || photocraft_format::recover(&e).map_err(|e| e.to_string())),
             })
             .collect()

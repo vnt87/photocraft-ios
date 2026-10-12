@@ -221,7 +221,6 @@ use serde_json::{Value, json};
 
 pub use control::{ControlRequest, ControlResponse};
 pub use file_dialog::{FileDialogAnswer, FileDialogFn, FileDialogReply, FileDialogRequest};
-pub use photocraft_engine::security_token::DocumentSecurityToken;
 pub use file_open::OsEvent;
 pub use state::{Tool, UiState};
 
@@ -675,9 +674,6 @@ pub struct PhotocraftApp {
     pub(crate) discard: Option<discard_ui::Prompt>,
     /// The Open or Save dialog in progress, and the action waiting on it (see `file_dialog`).
     pub(crate) file_dialog: Option<file_dialog::Pending>,
-    /// Sandbox tokens the file dialog's reply carried, while its answer is being acted on:
-    /// [`PhotocraftApp::push_recent`] stores the one for the path it records.
-    pub(crate) dialog_tokens: Vec<(String, DocumentSecurityToken)>,
     /// A Save As to a layered TIFF parked behind the TIFF Options prompt (see `tiff_options_ui`).
     pub(crate) tiff_options: Option<tiff_options_ui::Prompt>,
     /// Where each document was last saved or exported to through a dialog (#1826): its next Save
@@ -804,7 +800,6 @@ impl PhotocraftApp {
             prefs_rt: Default::default(),
             discard: None,
             file_dialog: None,
-            dialog_tokens: Vec::new(),
             tiff_options: None,
             save_dirs: HashMap::new(),
             targa_options: None,
@@ -1069,18 +1064,7 @@ impl PhotocraftApp {
         r.insert(0, path.to_string());
         r.truncate(cap);
         self.ui.recent_files = r.clone();
-        // A token the file dialog handed over for this path is kept with it; others are pruned.
-        let token = self.dialog_tokens.iter().find(|(p, _)| p == path).map(|(_, t)| t.clone());
-        self.session.prefs.edit(|p| {
-            let fh = &mut p.file_handling;
-            fh.recent_files = r;
-            if let Some(t) = token {
-                // Replaces the path's earlier token; a token that is empty or too large is dropped.
-                fh.recent_file_tokens.remove(path);
-                fh.set_recent_token(path, t);
-            }
-            fh.prune_recent_tokens();
-        });
+        self.session.prefs.edit(|p| p.file_handling.recent_files = r);
     }
 
     /// File › Open Recent › Clear Recent File List.
@@ -1088,7 +1072,6 @@ impl PhotocraftApp {
         self.ui.recent_files.clear();
         self.session.prefs.edit(|p| {
             p.file_handling.recent_files.clear();
-            p.file_handling.recent_file_tokens.clear();
         });
     }
 
@@ -1098,7 +1081,6 @@ impl PhotocraftApp {
         self.ui.recent_files.retain(|p| p != path);
         self.session.prefs.edit(|p| {
             p.file_handling.recent_files.retain(|r| r != path);
-            p.file_handling.recent_file_tokens.remove(path);
         });
     }
 
@@ -1116,10 +1098,6 @@ impl PhotocraftApp {
         let want = stored.get(..cap.min(stored.len())).unwrap_or_default();
         if self.ui.recent_files.as_slice() != want {
             self.ui.recent_files = want.to_vec();
-        }
-        // The count was lowered, the list edited or the file hand-edited: drop orphaned tokens.
-        if self.session.prefs().file_handling.recent_tokens_stale() {
-            self.session.prefs.edit(|p| p.file_handling.prune_recent_tokens());
         }
     }
 

@@ -1,5 +1,11 @@
 # Handoff: Linux session to Codex on macOS
 
+> Mac follow-up, 2026-10-12: this branch has been integrated and the Debug simulator
+> pipeline runs. The duplicate LINUX-3 token API is removed; managed snapshots and
+> sidecar bookmarks remain. MAC-3 code is implemented and partially simulator-tested.
+> See `MAC-simulator-validation.md` for current evidence and hardware acceptance gaps.
+> The Linux report below is retained as historical context.
+
 Written 2026-10-12 by the Claude Code Linux session while the Codex session was paused by a rate
 limit. Read this first, then `plans/README.md` and the ticket files. Everything below was written
 and checked on Linux; **nothing here has run on a simulator or device**.

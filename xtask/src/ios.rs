@@ -17,6 +17,7 @@ usage: cargo xtask ios (--sim | --device) [--release] [options]
   --release           Release configuration (default: Debug)
   --dry-run           print the commands that would run and exit (works on any host)
   --sim-name NAME     simulator to boot (default: \"iPad Air 11-inch (M3)\")
+  --show-simulator    open the desktop Simulator viewer (requires the full Xcode app)
   --device-id ID      device identifier for --device (see `xcrun devicectl list devices`);
                       also read from $PHOTOCRAFT_IOS_DEVICE
   --team ID           Apple development team id for signing (DEVELOPMENT_TEAM);
@@ -46,6 +47,7 @@ pub struct Options {
     pub release: bool,
     pub dry_run: bool,
     pub sim_name: String,
+    pub show_simulator: bool,
     pub device_id: Option<String>,
     pub team: Option<String>,
 }
@@ -60,6 +62,7 @@ pub enum Parsed {
 /// Parse the arguments after `ios`. `env_device` / `env_team` are the environment fallbacks.
 pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) -> Result<Parsed, String> {
     let (mut sim, mut device, mut release, mut dry_run) = (false, false, false, false);
+    let mut show_simulator = false;
     let (mut sim_name, mut device_id, mut team) = (None, None, None);
     let mut it = args.iter().copied();
     while let Some(a) = it.next() {
@@ -69,6 +72,7 @@ pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) ->
             "--device" => device = true,
             "--release" => release = true,
             "--dry-run" => dry_run = true,
+            "--show-simulator" => show_simulator = true,
             "--sim-name" | "--device-id" | "--team" => {
                 let v = match it.next() {
                     Some(v) if !v.starts_with('-') && !v.is_empty() => v.to_string(),
@@ -95,12 +99,16 @@ pub fn parse(args: &[&str], env_device: Option<&str>, env_team: Option<&str>) ->
     if mode == Mode::Device && sim_name.is_some() {
         return Err("--sim-name only applies to --sim".into());
     }
+    if mode == Mode::Device && show_simulator {
+        return Err("--show-simulator only applies to --sim".into());
+    }
     let clean = |s: Option<&str>| s.filter(|v| !v.trim().is_empty()).map(str::to_string);
     Ok(Parsed::Run(Options {
         mode,
         release,
         dry_run,
         sim_name: sim_name.unwrap_or_else(|| DEFAULT_SIM.to_string()),
+        show_simulator,
         device_id: device_id.or_else(|| clean(env_device)),
         team: team.or_else(|| clean(env_team)),
     }))
@@ -172,18 +180,7 @@ pub fn plan(o: &Options) -> Plan {
     // link-rust.sh as build phases, so no separate cargo step is needed.
     let mut xcodebuild = Step::new(
         "xcodebuild",
-        &[
-            "-project",
-            PROJECT,
-            "-scheme",
-            SCHEME,
-            "-configuration",
-            configuration(o),
-            "-destination",
-            destination,
-            "-derivedDataPath",
-            DERIVED_DATA,
-        ],
+        &["-project", PROJECT, "-scheme", SCHEME, "-configuration", configuration(o), "-destination", destination, "-derivedDataPath", DERIVED_DATA],
     );
     if o.mode == Mode::Device {
         // Automatic signing is the project default (CODE_SIGN_STYLE = Automatic). UNSURE: whether
@@ -202,7 +199,9 @@ pub fn plan(o: &Options) -> Plan {
             // `simctl boot` fails when the device is already booted: tolerated, then wait for it.
             steps.push(Step::new("xcrun", &["simctl", "boot", &o.sim_name]).tolerant());
             steps.push(Step::new("xcrun", &["simctl", "bootstatus", &o.sim_name, "-b"]));
-            steps.push(Step::new("open", &["-a", "Simulator"]));
+            if o.show_simulator {
+                steps.push(Step::new("open", &["-a", "Simulator"]));
+            }
             steps.push(Step::new("xcrun", &["simctl", "install", &o.sim_name, &app]));
             steps.push(Step::new("xcrun", &["simctl", "launch", &o.sim_name, BUNDLE_ID]));
         }
@@ -216,10 +215,7 @@ pub fn plan(o: &Options) -> Plan {
             }
             None => {
                 steps.push(Step::new("xcrun", &["devicectl", "list", "devices"]));
-                notes.push(
-                    "no device id: built only. Pass --device-id <id> (or set PHOTOCRAFT_IOS_DEVICE) from the list above to install and launch."
-                        .into(),
-                );
+                notes.push("no device id: built only. Pass --device-id <id> (or set PHOTOCRAFT_IOS_DEVICE) from the list above to install and launch.".into());
             }
         },
     }
@@ -316,6 +312,7 @@ mod tests {
         assert!(err(&["--sim", "--device-id", "X"]).contains("only apply to --device"));
         assert!(err(&["--sim", "--team", "T"]).contains("only apply to --device"));
         assert!(err(&["--device", "--sim-name", "iPad"]).contains("only applies to --sim"));
+        assert!(err(&["--device", "--show-simulator"]).contains("only applies to --sim"));
     }
 
     #[test]
@@ -332,10 +329,17 @@ mod tests {
     }
 
     #[test]
+    fn sim_launch_does_not_require_desktop_viewer() {
+        let p = plan(&opts(&["--sim"]));
+        assert!(!p.steps.iter().any(|step| step.program == "open"));
+        assert_eq!(p.steps.last().expect("launch step").args, ["simctl", "launch", DEFAULT_SIM, BUNDLE_ID]);
+    }
+
+    #[test]
     fn sim_plan() {
         let p = plan(&opts(&["--sim"]));
         let lines: Vec<String> = p.steps.iter().map(Step::display).collect();
-        assert_eq!(lines.len(), 6);
+        assert_eq!(lines.len(), 5);
         assert!(lines[0].starts_with("xcodebuild -project packaging/ios/PhotoCraft.xcodeproj -scheme PhotoCraft -configuration Debug"));
         assert!(lines[0].contains("-destination 'generic/platform=iOS Simulator'"));
         assert!(lines[0].contains("-derivedDataPath target/ios-derived"));
@@ -344,12 +348,14 @@ mod tests {
         assert_eq!(lines[1], "xcrun simctl boot 'iPad Air 11-inch (M3)'");
         assert!(p.steps[1].allow_failure && !p.steps[0].allow_failure);
         assert!(lines[2].contains("bootstatus") && lines[2].ends_with(" -b"));
-        assert_eq!(lines[3], "open -a Simulator");
-        assert_eq!(
-            lines[4],
-            "xcrun simctl install 'iPad Air 11-inch (M3)' target/ios-derived/Build/Products/Debug-iphonesimulator/PhotoCraft.app"
-        );
-        assert_eq!(lines[5], "xcrun simctl launch 'iPad Air 11-inch (M3)' ai.storyteller.photocraft");
+        assert_eq!(lines[3], "xcrun simctl install 'iPad Air 11-inch (M3)' target/ios-derived/Build/Products/Debug-iphonesimulator/PhotoCraft.app");
+        assert_eq!(lines[4], "xcrun simctl launch 'iPad Air 11-inch (M3)' ai.storyteller.photocraft");
+    }
+
+    #[test]
+    fn desktop_viewer_is_opened_only_when_requested() {
+        let p = plan(&opts(&["--sim", "--show-simulator"]));
+        assert_eq!(p.steps.iter().filter(|step| step.program == "open").map(Step::display).collect::<Vec<_>>(), ["open -a Simulator"]);
     }
 
     #[test]
@@ -377,10 +383,7 @@ mod tests {
         assert!(lines[0].contains("-allowProvisioningUpdates"));
         assert!(lines[0].contains("DEVELOPMENT_TEAM=TEAM123"));
         assert!(lines[0].ends_with(" build"));
-        assert_eq!(
-            lines[1],
-            "xcrun devicectl device install app --device 00008103-ABC target/ios-derived/Build/Products/Debug-iphoneos/PhotoCraft.app"
-        );
+        assert_eq!(lines[1], "xcrun devicectl device install app --device 00008103-ABC target/ios-derived/Build/Products/Debug-iphoneos/PhotoCraft.app");
         assert_eq!(lines[2], format!("xcrun devicectl device process launch --device 00008103-ABC {BUNDLE_ID}"));
         assert!(p.notes.is_empty());
         assert!(p.steps.iter().all(|s| !s.allow_failure));
@@ -397,12 +400,7 @@ mod tests {
 
     #[test]
     fn display_quotes_special_arguments() {
-        let s = Step {
-            program: "x".into(),
-            args: vec!["a b".into(), "it's".into(), "".into()],
-            env: vec![("K".into(), "v w".into())],
-            allow_failure: false,
-        };
+        let s = Step { program: "x".into(), args: vec!["a b".into(), "it's".into(), "".into()], env: vec![("K".into(), "v w".into())], allow_failure: false };
         assert_eq!(s.display(), "K='v w' x 'a b' 'it'\\''s' ''");
     }
 

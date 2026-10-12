@@ -16,7 +16,6 @@ use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 
 use photocraft_doc::DocId;
-use photocraft_engine::security_token::DocumentSecurityToken;
 use serde_json::{Value, json};
 
 use crate::PhotocraftApp;
@@ -51,32 +50,14 @@ pub enum FileDialogAnswer {
 /// Hands a dialog's answer to the app and wakes it, from any thread. Dropping it unanswered
 /// (a dialog that failed to show) counts as Cancel.
 pub struct FileDialogReply {
-    tx: Sender<Reply>,
+    tx: Sender<Option<FileDialogAnswer>>,
     ctx: egui::Context,
 }
 
-/// What travels back from the platform shell: the answer, and the sandbox tokens of the files it
-/// names (empty on desktop and the web).
-struct Reply {
-    answer: Option<FileDialogAnswer>,
-    tokens: Vec<(String, DocumentSecurityToken)>,
-}
-
-/// The most tokens one reply may carry; more are ignored (the recent list holds at most 100).
-const MAX_REPLY_TOKENS: usize = 100;
-
 impl FileDialogReply {
     pub fn send(self, answer: Option<FileDialogAnswer>) {
-        self.send_with_tokens(answer, Vec::new());
-    }
-
-    /// Answer with security-scoped bookmark metadata for the chosen files, as (path, token) pairs
-    /// (iPadOS, macOS sandbox). A token is remembered with its file in the recent list so the file
-    /// can be reopened after a restart (see [`PhotocraftApp::push_recent`]).
-    pub fn send_with_tokens(self, answer: Option<FileDialogAnswer>, mut tokens: Vec<(String, DocumentSecurityToken)>) {
-        tokens.truncate(MAX_REPLY_TOKENS);
         // Nothing is waiting any more when the app has quit meanwhile.
-        let _ = self.tx.send(Reply { answer, tokens });
+        let _ = self.tx.send(answer);
         self.ctx.request_repaint();
     }
 }
@@ -92,7 +73,7 @@ type Then = Box<dyn FnOnce(&mut PhotocraftApp, Option<FileDialogAnswer>) -> Resu
 pub(crate) struct Pending {
     /// Not shown yet: it is shown at the end of the frame, which has the window to parent it to.
     request: Option<FileDialogRequest>,
-    answer: Option<Receiver<Reply>>,
+    answer: Option<Receiver<Option<FileDialogAnswer>>>,
     then: Then,
 }
 
@@ -277,17 +258,14 @@ impl PhotocraftApp {
                 show(request, parent, FileDialogReply { tx, ctx: ctx.clone() });
             }
         }
-        let (answer, tokens) = match p.answer.as_ref().map(Receiver::try_recv) {
+        let answer = match p.answer.as_ref().map(Receiver::try_recv) {
             Some(Err(TryRecvError::Empty)) => return,
-            Some(Ok(Reply { answer, tokens })) => (answer, tokens),
+            Some(Ok(answer)) => answer,
             // The reply was dropped unanswered: the dialog couldn't be shown.
-            Some(Err(TryRecvError::Disconnected)) | None => (None, Vec::new()),
+            Some(Err(TryRecvError::Disconnected)) | None => None,
         };
         let Some(Pending { then, .. }) = self.file_dialog.take() else { return };
-        // Offered to `push_recent` while the answer is acted on; leftovers are not kept.
-        self.dialog_tokens = tokens;
         let result = then(self, answer);
-        self.dialog_tokens.clear();
         if let Err(e) = result
             && e != CANCELLED
         {

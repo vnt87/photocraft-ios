@@ -4,7 +4,7 @@
 - **Branch:** `feature/ipados-xcode-runner`
 - **Recommended Model:** `GPT-6-Luna`
 - **Prerequisite:** `MAC-1`, `MAC-2`
-- **Status:** READY TO PICK UP
+- **Status:** DEBUG SIMULATOR VERIFIED (2026-10-12); device signing/deployment and Release verification pending
 
 ---
 
@@ -45,8 +45,18 @@ pub fn run(args: &[String]) -> Result<(), String> {
 ---
 
 ## 4. Verification & Acceptance Criteria
-- [ ] `cargo xtask ios --help` prints usage instructions.
-- [ ] `cargo xtask ios --sim` compiles and launches in iPad Simulator.
+- [x] `cargo xtask ios --help` prints usage instructions.
+- [x] `cargo xtask ios --sim` compiles and launches in iPad Simulator.
+
+### Mac verification (2026-10-12)
+
+The integrated Debug pipeline builds a signed universal simulator bundle, boots the
+named iPad Air M3, installs, and launches successfully. The desktop viewer is now
+explicitly optional (`--show-simulator`), with regression coverage: this Mac has
+working CLI simulator tools but no `Simulator.app`. Device install/launch flag
+spellings match the installed `devicectl` help; actual device signing/deployment
+still require the connected iPad and a configured development team. Release
+execution remains unverified.
 
 ---
 

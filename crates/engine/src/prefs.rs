@@ -23,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::commands::CommandSpec;
-use crate::security_token::DocumentSecurityToken;
 use crate::{EngineError, Result, Session};
 
 /// A string-valued choice enum with its JSON names (used to validate `prefs.set` and to fill
@@ -521,69 +520,6 @@ pub struct FileHandling {
     pub recent_file_count: u32,
     /// Most recently opened files, newest first (File › Open Recent).
     pub recent_files: Vec<String>,
-    /// Sandbox access tokens (security-scoped bookmarks) of recent files, keyed by their entry in
-    /// `recent_files`. Absent in older preferences files. Kept pruned to the files still listed
-    /// (see [`FileHandling::prune_recent_tokens`]).
-    pub recent_file_tokens: BTreeMap<String, DocumentSecurityToken>,
-}
-
-impl FileHandling {
-    /// How many recent files are remembered: `recent_file_count`, at most 100.
-    pub fn recent_cap(&self) -> usize {
-        self.recent_file_count.min(100) as usize
-    }
-
-    /// The recent files that count, newest first.
-    fn listed_recent(&self) -> &[String] {
-        self.recent_files.get(..self.recent_cap().min(self.recent_files.len())).unwrap_or_default()
-    }
-
-    /// The sandbox token stored for the recent file `path`, if any.
-    pub fn recent_token(&self, path: &str) -> Option<&DocumentSecurityToken> {
-        self.recent_file_tokens.get(path)
-    }
-
-    /// Store `token` (sanitized; dropped when empty) for `path`, replacing any earlier one.
-    /// Returns whether it was kept. Call after `path` is in `recent_files`; a path that isn't
-    /// listed gets nothing.
-    pub fn set_recent_token(&mut self, path: &str, token: DocumentSecurityToken) -> bool {
-        let Some(token) = token.sanitized() else { return false };
-        if !self.listed_recent().iter().any(|p| p == path) {
-            return false;
-        }
-        self.recent_file_tokens.insert(path.to_string(), token);
-        true
-    }
-
-    /// Drop tokens whose file is no longer among the listed recent files, and tighten oversized
-    /// ones that came in through a hand-edited file or `prefs.set` (unusable ones go). True when
-    /// anything changed.
-    pub fn prune_recent_tokens(&mut self) -> bool {
-        let listed: Vec<String> = self.listed_recent().to_vec();
-        let before = std::mem::take(&mut self.recent_file_tokens);
-        let changed_len = before.len();
-        let mut changed = false;
-        for (k, t) in before {
-            if !listed.contains(&k) {
-                changed = true;
-            } else if t.is_sane() {
-                self.recent_file_tokens.insert(k, t);
-            } else {
-                changed = true;
-                if let Some(t) = t.sanitized() {
-                    self.recent_file_tokens.insert(k, t);
-                }
-            }
-        }
-        changed || self.recent_file_tokens.len() != changed_len
-    }
-
-    /// Whether [`prune_recent_tokens`](Self::prune_recent_tokens) would change something. Free
-    /// when there are no tokens (the usual case), so it can run every frame.
-    pub fn recent_tokens_stale(&self) -> bool {
-        let listed = self.listed_recent();
-        self.recent_file_tokens.iter().any(|(k, t)| !listed.contains(k) || !t.is_sane())
-    }
 }
 
 impl Default for FileHandling {
@@ -601,7 +537,6 @@ impl Default for FileHandling {
             rasterize_svg_groups_deeper_than: photocraft_doc::MAX_GROUP_DEPTH as u32,
             recent_file_count: 20,
             recent_files: Vec::new(),
-            recent_file_tokens: BTreeMap::new(),
         }
     }
 }

@@ -117,3 +117,117 @@ fn traversal_corrupt_and_oversized_sidecars_are_ignored() {
     assert!(s.recover.as_mut().unwrap()().is_empty());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+fn managed_snapshot(root: &Path) -> (String, String) {
+    let current = root.join("documents/reservation/photo.pcraft");
+    std::fs::create_dir_all(current.parent().unwrap()).unwrap();
+    std::fs::write(&current, b"managed snapshot").unwrap();
+    let old = "/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft".to_string();
+    (old, current.to_string_lossy().into_owned())
+}
+
+#[test]
+fn moved_container_rebases_matching_recent_snapshot_and_preserves_unknown_preferences() {
+    let root = temp();
+    let (old, current) = managed_snapshot(&root);
+    let prefs = serde_json::json!({"fileHandling":{"recentFiles":[old,"/external/photo.psd"],"unknown":42},"future":{"unchanged":[1,2]}});
+    let mut s = services(&root);
+    s.save_prefs.as_mut().unwrap()(&prefs.to_string()).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&s.load_prefs.as_mut().unwrap()().unwrap()).unwrap();
+    let mut expected = prefs;
+    expected["fileHandling"]["recentFiles"][0] = current.into();
+    assert_eq!(loaded, expected);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unrelated_missing_malformed_and_traversal_preferences_are_returned_verbatim() {
+    let root = temp();
+    managed_snapshot(&root);
+    let mut s = services(&root);
+    for text in [
+        " { \"fileHandling\": { \"recentFiles\": [\"/external/photo.psd\", \"/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/missing/photo.pcraft\", \"/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation/../photo.pcraft\", \"/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation//photo.pcraft\", \"relative/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft\", 7] } } ",
+        "{\"fileHandling\":{\"recentFiles\":\"wrong type\"}}",
+        "{broken JSON",
+    ] {
+        s.save_prefs.as_mut().unwrap()(text).unwrap();
+        assert_eq!(s.load_prefs.as_mut().unwrap()().as_deref(), Some(text));
+    }
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn moved_container_rebases_recovery_original_path_without_changing_sidecar() {
+    let root = temp();
+    let (old, current) = managed_snapshot(&root);
+    let mut s = services(&root);
+    let d = doc();
+    s.autosave.as_mut().unwrap()(&d, 9, Some(&old)).unwrap();
+    completed(&mut s).unwrap();
+    drop(s);
+    let mut s = services(&root);
+    let recovered = s.recover.as_mut().unwrap()();
+    assert_eq!(recovered.first().unwrap().path.as_deref(), Some(current.as_str()));
+    let disk = entries(&root.join("Recovery"));
+    assert_eq!(disk.first().unwrap().info.original_path.as_deref(), Some(old.as_str()));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_snapshot_symlink_outside_root_does_not_rebase() {
+    let root = temp();
+    let outside = temp();
+    std::fs::write(outside.join("photo.pcraft"), b"outside").unwrap();
+    std::fs::create_dir_all(root.join("documents")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("documents/reservation")).unwrap();
+    let old = "/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft";
+    let text = serde_json::json!({"fileHandling":{"recentFiles":[old]}}).to_string();
+    let mut s = services(&root);
+    s.save_prefs.as_mut().unwrap()(&text).unwrap();
+    assert_eq!(s.load_prefs.as_mut().unwrap()(), Some(text));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(outside).unwrap();
+}
+
+#[test]
+fn external_archive_marker_collision_never_rebases() {
+    let root = temp();
+    managed_snapshot(&root);
+    let text = serde_json::json!({"fileHandling":{"recentFiles":["/Volumes/backup/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft"]}}).to_string();
+    let mut s = services(&root);
+    s.save_prefs.as_mut().unwrap()(&text).unwrap();
+    assert_eq!(s.load_prefs.as_mut().unwrap()(), Some(text));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn physical_and_simulator_container_prefixes_require_valid_uuids() {
+    let root = temp();
+    let (_, current) = managed_snapshot(&root);
+    let app = "11111111-2222-3333-4444-555555555555";
+    let device = "AAAA1111-BBBB-2222-CCCC-333333333333";
+    for prefix in [
+        format!("/var/mobile/Containers/Data/Application/{app}"),
+        format!("/private/var/mobile/Containers/Data/Application/{app}"),
+        format!("/Users/owner/Library/Developer/CoreSimulator/Devices/{device}/data/Containers/Data/Application/{app}"),
+    ] {
+        let old = format!("{prefix}/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft");
+        assert_eq!(remap_managed_path(&old, &root), Some(current.clone()));
+    }
+    for prefix in [
+        "/var/mobile/Containers/Data/Application/not-a-uuid",
+        "/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-55555555555Z",
+        "/Users/owner/Library/Developer/CoreSimulator/Devices/not-a-uuid/data/Containers/Data/Application/11111111-2222-3333-4444-555555555555",
+        "/Users/../Library/Developer/CoreSimulator/Devices/AAAA1111-BBBB-2222-CCCC-333333333333/data/Containers/Data/Application/11111111-2222-3333-4444-555555555555",
+    ] {
+        let old = format!("{prefix}/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft");
+        assert_eq!(remap_managed_path(&old, &root), None);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

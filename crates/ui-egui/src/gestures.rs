@@ -321,14 +321,7 @@ mod tests {
     }
 
     fn xf(rotation: f32, flip: bool) -> ViewXform {
-        ViewXform {
-            rect: Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0)),
-            zoom: 1.0,
-            center: [400.0, 300.0],
-            flip,
-            rotation,
-            aspect: 1.0,
-        }
+        ViewXform { rect: Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0)), zoom: 1.0, center: [400.0, 300.0], flip, rotation, aspect: 1.0 }
     }
 
     fn xf_of(view: &View, base: &ViewXform, ppp: f32) -> ViewXform {

@@ -144,7 +144,9 @@ mod tests {
     #[test]
     fn degenerate_input_stays_finite() {
         let b = TouchStreamBuilder::new();
-        for frames in [b.pinch((f32::NAN, 0.0), f32::INFINITY, 1.0, 0), b.rotate((0.0, 0.0), f32::NAN, 0.0, f32::NAN, 0), b.pan((0.0, 0.0), (f32::NAN, 1.0), 0, 0)] {
+        for frames in
+            [b.pinch((f32::NAN, 0.0), f32::INFINITY, 1.0, 0), b.rotate((0.0, 0.0), f32::NAN, 0.0, f32::NAN, 0), b.pan((0.0, 0.0), (f32::NAN, 1.0), 0, 0)]
+        {
             assert!(!frames.is_empty());
             assert!(frames.iter().flatten().all(|s| s.x.is_finite() && s.y.is_finite()));
         }
