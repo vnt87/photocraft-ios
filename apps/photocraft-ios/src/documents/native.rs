@@ -275,6 +275,9 @@ pub fn install(services: &mut Services, root: PathBuf) -> Result<(), String> {
                 .unwrap_or_else(FileDialogAnswer::Unavailable);
             reply.send(Some(answer));
         }
+        FileDialogRequest::Folder { .. } => {
+            reply.send(Some(FileDialogAnswer::Unavailable("Choosing a folder is not supported on iPadOS yet".into())));
+        }
         FileDialogRequest::Open { multiple, extensions, .. } => {
             let root = dialog_root.clone();
             dispatch2::DispatchQueue::main().exec_async(move || {
