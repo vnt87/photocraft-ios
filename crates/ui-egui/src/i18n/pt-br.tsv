@@ -2794,6 +2794,8 @@ cameraRaw	Whites	Brancos
 	Drag to pan · Scroll to zoom · Double-click to fit	Arraste para mover · Role para ampliar · Clique duas vezes para ajustar
 	Show/Hide All Panels	Mostrar/ocultar todos os painéis
 	Show/Hide Panels	Mostrar/ocultar painéis
+	Collapse Panels to Icons	Recolher painéis em ícones
+	Show Panels	Mostrar painéis
 	Could not open	Não foi possível abrir
 	{path}: the path is not valid Unicode; rename the file and open it again.	{path}: o caminho não é Unicode válido; renomeie o arquivo e abra-o novamente.
 

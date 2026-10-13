@@ -658,18 +658,11 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     {
                         app.ui.palette_open = !app.ui.palette_open;
                     }
-                    let (theme_icon, appearance_label) = match app.session.prefs().interface.appearance_mode {
-                        photocraft_engine::prefs::AppearanceMode::Auto => ("monitor", tl!("Auto")),
-                        photocraft_engine::prefs::AppearanceMode::Dark => ("moon", tl!("Dark")),
-                        photocraft_engine::prefs::AppearanceMode::Light => ("sun", tl!("Light")),
-                    };
+                    // Light and Dark flip in one click: no third state, no menu (Preferences keeps Auto).
+                    let (theme_icon, appearance_label) = if Tokens::for_kind(app.ui.theme).dark() { ("moon", tl!("Dark")) } else { ("sun", tl!("Light")) };
                     let appearance_tip = format!("{}: {}", tl!("Appearance Mode"), appearance_label);
-                    if icons_shown >= 2 {
-                        let button = icons::button(ui, theme_icon, 28.0, false, &appearance_tip);
-                        if button.clicked() {
-                            crate::prefs_ui::cycle_appearance(app, ui.ctx());
-                        }
-                        button.context_menu(|ui| crate::prefs_ui::appearance_context_menu(app, ui));
+                    if icons_shown >= 2 && icons::button(ui, theme_icon, 28.0, false, &appearance_tip).clicked() {
+                        crate::prefs_ui::cycle_appearance(app, ui.ctx());
                     }
                     if rtl { ui.min_rect().right() } else { ui.min_rect().left() }
                 };
@@ -1619,10 +1612,12 @@ pub fn status_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 
 pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // Even legacy destinations must discard gestures captured by an earlier workspace.
-    let customized = crate::panel_docking::show(app, ui);
+    // A collapsed dock draws no panels, only its rail (the layout itself is kept for the next open).
+    let collapsed = app.ui.panels.dock_collapsed;
+    let customized = if collapsed { app.ui.docking.is_some() } else { crate::panel_docking::show(app, ui) };
     let t = Tokens::get(ui.ctx());
     let p = app.ui.panels.clone();
-    if t.pro && !customized {
+    if t.pro && !customized && !collapsed {
         dock_panels(app, ui, &p, &t);
     }
     // Narrow icon rail, unless an embedding app hides it: shows, expands or collapses panel groups.
@@ -1638,6 +1633,16 @@ pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let x = if crate::direction::is_rtl() { r.right() + 6.0 } else { r.left() - 6.0 };
                 ui.painter().line_segment([pos2(x, r.top() - 8.0), pos2(x, r.bottom() + 8.0)], Stroke::new(1.0, t.separator));
                 ui.spacing_mut().item_spacing.y = 4.0;
+                // The chevron points where the dock goes: away from the canvas to fold it, back to unfold.
+                let away_right = !crate::direction::is_rtl();
+                let (chevron, tip) = if collapsed == away_right {
+                    ("chevrons-left", tl!("Show Panels"))
+                } else {
+                    ("chevrons-right", tl!("Collapse Panels to Icons"))
+                };
+                if icons::rail_button(ui, chevron, rb, false, tip).clicked() {
+                    app.ui.panels.dock_collapsed = !collapsed;
+                }
                 use crate::dock::Group;
                 let entries: [(&str, &str, Group); 5] = [
                     ("sliders-horizontal", tl!("Properties"), Group::Properties),
@@ -1651,7 +1656,17 @@ pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     let docked = t.pro || g != Group::Properties;
                     let on = if customized { crate::panel_docking::rail_on(app, g) } else { g.shown(&p) && !(docked && app.ui.dock.is_collapsed(g)) };
                     if icons::rail_button(ui, icon, rb, on, name).clicked() {
-                        if customized {
+                        if collapsed {
+                            // Unfold, and show what was tapped (it may already be the open group).
+                            app.ui.panels.dock_collapsed = false;
+                            if !on {
+                                if customized {
+                                    crate::panel_docking::rail_click(app, g);
+                                } else {
+                                    crate::dock::rail_click(app, g, docked);
+                                }
+                            }
+                        } else if customized {
                             crate::panel_docking::rail_click(app, g);
                         } else {
                             crate::dock::rail_click(app, g, docked);
@@ -1660,7 +1675,7 @@ pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 }
             });
     }
-    if !t.pro && !customized {
+    if !t.pro && !customized && !collapsed {
         dock_panels(app, ui, &p, &t);
     }
     crate::dock::persist(app, ui.ctx());
@@ -5299,6 +5314,34 @@ mod embedding_tests {
         assert!(!drawn(&h, "title_bar"), "the title bar is drawn");
         assert!(h.query_by_label("File").is_none(), "the menus are drawn");
         assert!(drawn(&h, "dock"), "the dock itself stays");
+    }
+
+    /// The rail's chevron folds the dock to its icons; tapping a rail icon unfolds it again.
+    #[test]
+    fn rail_chevron_collapses_the_dock_and_a_rail_icon_opens_it() {
+        let mut h = whole_app(true, true);
+        assert!(!h.state().ui.panels.dock_collapsed && h.query_by_label("Show Panels").is_none());
+        h.get_by_label("Collapse Panels to Icons").click();
+        h.run_steps(4);
+        assert!(h.state().ui.panels.dock_collapsed, "the chevron folds the dock");
+        assert!(h.state().ui.panels.dock, "the dock stays on: only its panels fold away");
+        assert!(h.query_by_label("Collapse Panels to Icons").is_none() && h.query_by_label("Show Panels").is_some());
+        h.get_by_label("Layers").click();
+        h.run_steps(4);
+        assert!(!h.state().ui.panels.dock_collapsed, "a rail icon opens the dock");
+        h.get_by_label("Collapse Panels to Icons").click();
+        h.run_steps(4);
+        h.get_by_label("Show Panels").click();
+        h.run_steps(4);
+        assert!(!h.state().ui.panels.dock_collapsed, "the chevron unfolds it");
+    }
+
+    /// Settings saved before the dock could fold load unfolded.
+    #[test]
+    fn panels_without_dock_collapsed_deserialize_unfolded() {
+        let mut v = serde_json::to_value(crate::state::Panels::default()).unwrap();
+        v.as_object_mut().unwrap().remove("dock_collapsed");
+        assert!(!serde_json::from_value::<crate::state::Panels>(v).unwrap().dock_collapsed);
     }
 
     /// Settings saved before the flags existed load with both on.

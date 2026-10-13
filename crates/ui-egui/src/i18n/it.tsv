@@ -2439,6 +2439,8 @@ cameraRaw	Amount	Quantità
 	Drag to pan · Scroll to zoom · Double-click to fit	Trascina per spostare · Scorri per ingrandire · Doppio clic per adattare
 	Show/Hide All Panels	Mostra/nascondi tutti i pannelli
 	Show/Hide Panels	Mostra/nascondi pannelli
+	Collapse Panels to Icons	Comprimi i pannelli in icone
+	Show Panels	Mostra pannelli
 	Could not open	Impossibile aprire
 	{path}: the path is not valid Unicode; rename the file and open it again.	{path}: il percorso non è Unicode valido; rinomina il file e riaprilo.
 

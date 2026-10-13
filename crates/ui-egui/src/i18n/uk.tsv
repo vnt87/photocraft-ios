@@ -2609,6 +2609,8 @@ cameraRaw	Roughness	Шорсткість
 	Drag to pan · Scroll to zoom · Double-click to fit	Перетягніть для панорамування · Прокрутіть для масштабування · Двічі клацніть, щоб умістити
 	Show/Hide All Panels	Показати/приховати всі панелі
 	Show/Hide Panels	Показати/приховати панелі
+	Collapse Panels to Icons	Згорнути панелі в значки
+	Show Panels	Показати панелі
 	Could not open	Не вдалося відкрити
 	{path}: the path is not valid Unicode; rename the file and open it again.	{path}: шлях не є коректним Unicode; перейменуйте файл і відкрийте його знову.
 

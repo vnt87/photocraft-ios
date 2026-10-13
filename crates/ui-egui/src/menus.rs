@@ -72,6 +72,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     // Photoshop's Tab and ⇧Tab: all panels (Tools, options bar and the dock), or only the dock.
     ("window.togglePanels", "Show/Hide All Panels", &[], Some("Tab")),
     ("window.toggle.dock", "Show/Hide Panels", &[], Some("Shift+Tab")),
+    ("window.toggle.dockCollapsed", "Collapse Panels to Icons", &["Window"], None),
     ("window.toggle.options", "Options", &["Window"], None),
     // Photoshop's Ctrl+Tab and Ctrl+Shift+Tab, on macOS too (⌘Tab belongs to the system, #2340).
     ("window.nextDocument", "Next Document", &[], Some("Ctrl+Tab")),
@@ -674,6 +675,7 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
                 "options" => &mut p.options_bar,
                 "brushSettings" => &mut p.brush_settings,
                 "dock" => &mut p.dock,
+                "dockCollapsed" => &mut p.dock_collapsed,
                 _ => return Err(format!("unknown panel in {t}")),
             };
             *slot = !*slot;
@@ -877,6 +879,7 @@ fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
         "window.toggle.navigator" => p.navigator,
         "window.toggle.toolbar" => p.toolbar,
         "window.toggle.dock" => p.dock,
+        "window.toggle.dockCollapsed" => p.dock_collapsed,
         "window.togglePanels" => p.toolbar || p.options_bar || p.dock,
         "window.toggle.options" => p.options_bar,
         "window.toggle.brushSettings" => p.brush_settings,

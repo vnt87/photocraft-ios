@@ -3442,6 +3442,8 @@ cameraRaw	Yellow	Κίτρινο
 	Shift	Shift
 	Show/Hide All Panels	Εμφάνιση/απόκρυψη όλων των πλαισίων
 	Show/Hide Panels	Εμφάνιση/απόκρυψη πλαισίων
+	Collapse Panels to Icons	Σύμπτυξη πλαισίων σε εικονίδια
+	Show Panels	Εμφάνιση πλαισίων
 	The GPU compositor wasn't used: {reason}	Η σύνθεση μέσω GPU δεν χρησιμοποιήθηκε: {reason}
 	This redraw took {seconds} s on the CPU.	Αυτή η επανασχεδίαση διήρκεσε {seconds} s στη CPU.
 	Unavailable in this color mode	Μη διαθέσιμο σε αυτή τη χρωματική λειτουργία

@@ -2378,6 +2378,8 @@ cameraRaw	Blending	混合
 	Drag to pan · Scroll to zoom · Double-click to fit	拖动以平移 · 滚动以缩放 · 双击以适应窗口
 	Show/Hide All Panels	显示/隐藏所有面板
 	Show/Hide Panels	显示/隐藏面板
+	Collapse Panels to Icons	将面板折叠为图标
+	Show Panels	显示面板
 	Could not open	无法打开
 	{path}: the path is not valid Unicode; rename the file and open it again.	{path}：路径不是有效的 Unicode；请重命名文件后再打开。
 

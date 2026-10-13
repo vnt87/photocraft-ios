@@ -2367,6 +2367,8 @@ cameraRaw	Color	Barvy
 	Drag to pan · Scroll to zoom · Double-click to fit	Tažením posouvejte · Rolováním přibližujte · Dvojklikem přizpůsobte
 	Show/Hide All Panels	Zobrazit/skrýt všechny panely
 	Show/Hide Panels	Zobrazit/skrýt panely
+	Collapse Panels to Icons	Sbalit panely na ikony
+	Show Panels	Zobrazit panely
 	Could not open	Nelze otevřít
 	{path}: the path is not valid Unicode; rename the file and open it again.	{path}: cesta není platný Unicode; přejmenujte soubor a otevřete jej znovu.
 

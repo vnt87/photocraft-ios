@@ -398,6 +398,10 @@ pub struct Panels {
     /// The right-hand panel dock. ⇧Tab hides and shows it, as in Photoshop (#1313).
     #[serde(default = "yes")]
     pub dock: bool,
+    /// The dock folded away to its icon rail (the rail's chevron). Unlike `dock`, the rail stays so
+    /// the panels are one tap away on a touch screen; tapping a rail icon opens the dock again.
+    #[serde(default)]
+    pub dock_collapsed: bool,
     /// What Tab hid (toolbar, options bar, dock), so a second Tab brings back just those.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden_by_tab: Option<[bool; 3]>,
@@ -430,6 +434,7 @@ impl Default for Panels {
             character: false,
             toolbar_double: false,
             dock: true,
+            dock_collapsed: false,
             hidden_by_tab: None,
             rail: true,
             menu_bar: true,

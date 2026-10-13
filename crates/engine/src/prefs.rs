@@ -293,7 +293,7 @@ impl Default for Interface {
             theme: Theme::ProMedium,
             appearance_mode: AppearanceMode::Dark,
             dark_theme: DarkTheme::ProMedium,
-            light_theme: LightTheme::StudioLight,
+            light_theme: LightTheme::ProLightGray,
             favorite_themes: Vec::new(),
             canvas_color: CanvasColor::Default,
             canvas_custom_color: "#282828".into(),

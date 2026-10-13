@@ -22,6 +22,11 @@ downloads, the other Crafting Apps, contributing), read the upstream README:
 - **`cargo xtask ios`**: build, install and launch on the Simulator or a physical iPad
   (`--sim`, `--device --device-id <id> --team <id> [--bundle-id <dev id>]`).
 - **Shared changes**: a painted tool-cursor fallback on iOS (winit ignores OS cursor setters there).
+- **Interface changes for touch**: the default Light theme is Pro (Light Gray), so Light and Dark are the same
+  Pro layout in two brightness levels; the title-bar appearance button flips Light and Dark in one tap (no
+  Follow System state, no menu; Preferences keeps Auto); the right dock folds to its icon rail with the rail's
+  chevron (Window > Collapse Panels to Icons), and tapping a rail icon opens it again. Saved settings keep an
+  earlier Light theme choice: pick Pro (Light Gray) once in Preferences > Interface to match.
 - **Docs**: [hardware parity](docs/hardware-parity.md) has an iPadOS column; the port plan, tickets
   and validation reports are in [`plans/`](plans/README.md).
 

@@ -2407,6 +2407,8 @@
 	Drag to pan · Scroll to zoom · Double-click to fit	Ziehen zum Verschieben · Scrollen zum Zoomen · Doppelklick zum Einpassen
 	Show/Hide All Panels	Alle Bedienfelder ein-/ausblenden
 	Show/Hide Panels	Bedienfelder ein-/ausblenden
+	Collapse Panels to Icons	Bedienfelder auf Symbole reduzieren
+	Show Panels	Bedienfelder einblenden
 	Could not open	Öffnen nicht möglich
 	{path}: the path is not valid Unicode; rename the file and open it again.	{path}: Der Dateipfad enthält ungültige Zeichen. Benenne die Datei um und öffne sie erneut.
 

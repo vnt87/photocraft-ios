@@ -112,12 +112,10 @@ fn selected_theme(interface: &prefs::Interface, system: Option<egui::Theme>) -> 
     }
 }
 
+/// The title-bar switcher: flips between Light and Dark from whatever is showing now, so it never
+/// writes `Auto` (that stays a Preferences choice).
 pub(crate) fn cycle_appearance(app: &mut PhotocraftApp, ctx: &egui::Context) {
-    let next = match app.session.prefs().interface.appearance_mode {
-        AppearanceMode::Auto => AppearanceMode::Light,
-        AppearanceMode::Light => AppearanceMode::Dark,
-        AppearanceMode::Dark => AppearanceMode::Auto,
-    };
+    let next = if Tokens::for_kind(app.ui.theme).dark() { AppearanceMode::Light } else { AppearanceMode::Dark };
     if let Err(e) = app.run("prefs.set", json!({"path": "interface.appearanceMode", "value": next.name()})) {
         app.ui.status = e;
         return;
@@ -146,41 +144,6 @@ const DARK_THEME_OPTIONS: &[(&str, ThemeKind)] = &[
     ("breezeDark", ThemeKind::BreezeDark),
     ("softDark", ThemeKind::SoftDark),
 ];
-
-fn favorite_theme_groups(favorites: &[SavedTheme]) -> (Vec<ThemeKind>, Vec<ThemeKind>) {
-    let group = |options: &[(&str, ThemeKind)]| {
-        options.iter().filter_map(|(id, kind)| SavedTheme::parse(id).filter(|theme| favorites.contains(theme)).map(|_| *kind)).collect()
-    };
-    (group(LIGHT_THEME_OPTIONS), group(DARK_THEME_OPTIONS))
-}
-
-/// Right-click menu on the top-right appearance button. A plain click still cycles modes.
-pub(crate) fn appearance_context_menu(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
-    if ui.button(tl!("Appearance Settings…")).clicked() {
-        open_preferences(app, "interface");
-        ui.close();
-    }
-    let (light, dark) = favorite_theme_groups(&app.session.prefs().interface.favorite_themes);
-    let has_light = !light.is_empty();
-    if !light.is_empty() || !dark.is_empty() {
-        ui.separator();
-    }
-    for kind in light {
-        if ui.selectable_label(app.ui.theme == kind, tl!(kind.label())).clicked() {
-            app.set_theme(ui.ctx(), kind);
-            ui.close();
-        }
-    }
-    if has_light && !dark.is_empty() {
-        ui.separator();
-    }
-    for kind in dark {
-        if ui.selectable_label(app.ui.theme == kind, tl!(kind.label())).clicked() {
-            app.set_theme(ui.ctx(), kind);
-            ui.close();
-        }
-    }
-}
 
 fn system_theme(app: &PhotocraftApp, ctx: &egui::Context) -> Option<egui::Theme> {
     app.services.system_theme.as_ref().and_then(|read| read(ctx)).or_else(|| ctx.system_theme())
@@ -2078,7 +2041,7 @@ mod tests {
     fn appearance_resolves_both_saved_themes_and_follows_system() {
         let mut interface = prefs::Interface { appearance_mode: AppearanceMode::Auto, ..prefs::Interface::default() };
         assert_eq!(selected_theme(&interface, Some(egui::Theme::Dark)), ThemeKind::ProMedium);
-        assert_eq!(selected_theme(&interface, Some(egui::Theme::Light)), ThemeKind::StudioLight);
+        assert_eq!(selected_theme(&interface, Some(egui::Theme::Light)), ThemeKind::ProLightGray);
         interface.dark_theme = DarkTheme::Studio;
         interface.light_theme = LightTheme::Classic;
         assert_eq!(selected_theme(&interface, Some(egui::Theme::Dark)), ThemeKind::Studio);
@@ -2119,17 +2082,35 @@ mod tests {
         app.run("prefs.set", json!({"path": "interface.appearanceMode", "value": "auto"})).unwrap();
         let ctx = egui::Context::default();
         tick(&mut app, &ctx);
-        assert_eq!(app.ui.theme, ThemeKind::StudioLight);
+        assert_eq!(app.ui.theme, ThemeKind::ProLightGray);
+    }
+
+    /// Light and Dark are two brightness levels of one theme: the defaults share a layout and
+    /// differ only in colour, so flipping the mode never moves buttons or swaps icon sets.
+    #[test]
+    fn default_light_and_dark_are_variants_of_one_theme() {
+        let interface = prefs::Interface::default();
+        let (dark, light) = (Tokens::for_kind(selected_theme(&prefs::Interface { appearance_mode: AppearanceMode::Dark, ..interface.clone() }, None)), {
+            Tokens::for_kind(selected_theme(&prefs::Interface { appearance_mode: AppearanceMode::Light, ..interface }, None))
+        });
+        assert!(dark.dark() && !light.dark());
+        assert_eq!((dark.pro, dark.round_chips, dark.bevel), (light.pro, light.round_chips, light.bevel));
+        assert_eq!((dark.radius_sm, dark.radius, dark.radius_lg), (light.radius_sm, light.radius, light.radius_lg));
+        assert_eq!((dark.kind, light.kind), (ThemeKind::ProMedium, ThemeKind::ProLightGray));
     }
 
     #[test]
-    fn appearance_button_cycles_modes_without_losing_theme_choices() {
+    fn appearance_button_flips_light_and_dark_without_losing_theme_choices() {
         let ctx = egui::Context::default();
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
         app.run("prefs.set", json!({"values": {"interface.darkTheme": "studio", "interface.lightTheme": "classic"}})).unwrap();
-        for (mode, visible) in
-            [(AppearanceMode::Auto, ThemeKind::Studio), (AppearanceMode::Light, ThemeKind::Classic), (AppearanceMode::Dark, ThemeKind::Studio)]
-        {
+        app.run("prefs.set", json!({"path": "interface.appearanceMode", "value": "auto"})).unwrap();
+        tick(&mut app, &ctx);
+        // Following the system is only left through the switcher: it flips what is showing.
+        let showing_dark = Tokens::for_kind(app.ui.theme).dark();
+        let first = if showing_dark { (AppearanceMode::Light, ThemeKind::Classic) } else { (AppearanceMode::Dark, ThemeKind::Studio) };
+        let second = if showing_dark { (AppearanceMode::Dark, ThemeKind::Studio) } else { (AppearanceMode::Light, ThemeKind::Classic) };
+        for (mode, visible) in [first, second, first, second] {
             cycle_appearance(&mut app, &ctx);
             assert_eq!(app.session.prefs().interface.appearance_mode, mode);
             assert_eq!(app.ui.theme, visible);
@@ -2232,13 +2213,13 @@ mod tests {
         ctx.set_theme(egui::ThemePreference::Dark);
         assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Dark);
         appearance_frame(&mut app, &ctx, Some(egui::Theme::Light));
-        assert_palette(&ctx, ThemeKind::StudioLight);
+        assert_palette(&ctx, ThemeKind::ProLightGray);
         assert_eq!(app.session.prefs().interface.appearance_mode, AppearanceMode::Auto);
         // A restored pin must also clear when the concrete PhotoCraft palette stays the same.
         ctx.set_theme(egui::ThemePreference::Dark);
         appearance_frame(&mut app, &ctx, Some(egui::Theme::Light));
         assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::System);
-        assert_palette(&ctx, ThemeKind::StudioLight);
+        assert_palette(&ctx, ThemeKind::ProLightGray);
         appearance_frame(&mut app, &ctx, Some(egui::Theme::Dark));
         assert_palette(&ctx, ThemeKind::ProMedium);
         assert_eq!(app.session.prefs().interface.appearance_mode, AppearanceMode::Auto);
@@ -2344,9 +2325,6 @@ mod tests {
         h.run_steps(2);
         assert_eq!(h.state().session.prefs().interface.favorite_themes, vec![SavedTheme::Classic]);
         assert!(h.query_by_label("Remove from favorites: Classic").is_some());
-        let (light, dark) = favorite_theme_groups(&[SavedTheme::Studio, SavedTheme::Classic, SavedTheme::Adwaita]);
-        assert_eq!(light, vec![ThemeKind::Classic, ThemeKind::Adwaita]);
-        assert_eq!(dark, vec![ThemeKind::Studio]);
     }
 
     /// Every generated preference label, section title and choice label has an entry in each
