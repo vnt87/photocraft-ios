@@ -4409,6 +4409,7 @@ dependencies = [
  "blake3",
  "crc32fast",
  "flate2",
+ "libc",
  "photocraft-codecs",
  "photocraft-color",
  "photocraft-doc",
