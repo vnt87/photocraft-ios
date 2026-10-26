@@ -6,7 +6,7 @@ pub fn run(app: &mut PhotocraftApp, mode: &str) -> Result<(), String> {
     let copy = app.services.clipboard_set_image.as_mut().ok_or("clipboard copy is unavailable")?;
     copy(2, 2, &pixels)?;
     let paste = app.services.clipboard_get_image.as_mut().ok_or("clipboard paste is unavailable")?;
-    let actual = paste().ok_or("clipboard paste returned no image")?;
+    let actual = paste()?.ok_or("clipboard paste returned no image")?;
     if actual != (2, 2, pixels.to_vec()) {
         return Err("native clipboard pixels changed".into());
     }

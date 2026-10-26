@@ -146,10 +146,11 @@ pub fn export_document(doc: &Document, name: &str, settings: &ExportSettings) ->
         .map_err(|_| "Export failed unexpectedly; the document is unchanged".to_string())?
 }
 
-/// Import all shared document formats without flattening native documents.
-pub fn import_document(name: &str, bytes: &[u8], max_svg_group_depth: usize) -> Result<(Document, Vec<String>), String> {
+/// Import all shared document formats without flattening native documents, carrying the import
+/// options the engine passes in (its SVG group-depth limit, demosaic choice, …).
+pub fn import_document(name: &str, bytes: &[u8], options: &photocraft_io::ImportOptions) -> Result<(Document, Vec<String>), String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        photocraft_io::import_with_svg_group_depth(name, bytes, max_svg_group_depth).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string())
+        photocraft_io::import_with_options(name, bytes, options).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string())
     }))
     .map_err(|_| "Import failed unexpectedly".to_string())?
 }

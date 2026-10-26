@@ -55,15 +55,15 @@ fn native_zip_and_png_use_shared_codecs_and_keep_native_depth() {
     let mut d = (*doc()).clone();
     d.layers.push(photocraft_doc::Layer::group("Editable group", vec![photocraft_doc::Layer::group("Nested", Vec::new())]));
     let (bytes, _) = export_document(&d, "roundtrip.pcraft", &ExportSettings::default()).unwrap();
-    let (restored, _) = import_document("roundtrip.pcraft", &bytes, 8).unwrap();
+    let (restored, _) = import_document("roundtrip.pcraft", &bytes, &photocraft_io::ImportOptions::default()).unwrap();
     assert_eq!(restored.size, d.size);
     assert_eq!(restored.depth, SampleType::U16);
     assert_eq!(restored.layers.len(), 1);
     assert_eq!(restored.layers.first().unwrap().name, "Editable group");
     let (png, _) = export_document(&d, "roundtrip.png", &ExportSettings::default()).unwrap();
-    let (restored, _) = import_document("roundtrip.png", &png, 8).unwrap();
+    let (restored, _) = import_document("roundtrip.png", &png, &photocraft_io::ImportOptions::default()).unwrap();
     assert_eq!(restored.size, d.size);
-    assert!(import_document("bad.pcraft", b"broken", 8).is_err());
+    assert!(import_document("bad.pcraft", b"broken", &photocraft_io::ImportOptions::default()).is_err());
 }
 #[test]
 fn recovery_survives_multiple_launches_and_adoption_discards_original() {

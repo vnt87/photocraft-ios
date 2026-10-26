@@ -92,7 +92,10 @@ mod tests {
     fn help_menu_lists_links_then_separator_then_system_info_and_about() {
         let app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
         let help: Vec<String> = crate::menus::menu_items(&app).into_iter().filter(|i| i.path == ["Help"]).map(|i| i.id).collect();
-        assert_eq!(help, ["help.website", "help.artcraftWebsite", "help.github", "help.reportIssue", "---", "help.systemInfo", "help.about"]);
+        assert_eq!(
+            help,
+            ["help.website", "help.artcraftWebsite", "help.github", "help.reportIssue", "help.checkForUpdates", "---", "help.systemInfo", "help.about"]
+        );
         for (id, _) in COMMANDS {
             assert!(crate::menus::is_live(id) && crate::menus::is_enabled(&app, id), "{id}");
         }
@@ -102,10 +105,7 @@ mod tests {
     fn link_commands_open_their_urls() {
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
         let ctx = egui::Context::default();
-        for (id, url) in [
-            ("help.website", "https://getartcraft.com/apps/photocraft"),
-            ("help.github", "https://github.com/storytold/photocraft"),
-        ] {
+        for (id, url) in [("help.website", "https://getartcraft.com/apps/photocraft"), ("help.github", "https://github.com/storytold/photocraft")] {
             let r = crate::menus::invoke(&mut app, &ctx, id, serde_json::json!({})).unwrap();
             assert_eq!(r["url"], url);
             assert_eq!(app.ui.status, format!("Opened {url}"));

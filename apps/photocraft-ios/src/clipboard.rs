@@ -41,10 +41,11 @@ pub fn install(services: &mut photocraft_ui_egui::Services) {
     services.encode_png = Some(Box::new(|w, h, pixels| encode_png(w, h, pixels, &limits())));
     services.clipboard_set_image = Some(Box::new(native::set_image));
     services.clipboard_get_image = Some(Box::new(|| match native::get_image() {
-        Ok(image) => image,
+        Ok(image) => Ok(image),
         Err(error) => {
             log::warn!("PhotoCraft clipboard paste failed: {error}");
-            None
+            // A failed paste reads as an empty clipboard, as Photoshop would.
+            Ok(None)
         }
     }));
     services.open_url = Some(Box::new(native::open_url));
