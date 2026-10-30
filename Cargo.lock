@@ -5281,7 +5281,7 @@ dependencies = [
 
 [[package]]
 name = "photocraft-ios"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
