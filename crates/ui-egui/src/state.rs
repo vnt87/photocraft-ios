@@ -17,7 +17,9 @@ pub use panel_state::{
 pub use tool::Tool;
 pub use tool_options::{SampleAllLayers, ToolOptions};
 use tool_options::{default_brush_tool, default_layer_filter_mode, yes};
-pub use transform::{BoxResize, CamTransform, ContentAwareOptions, Extras, MadeLayer, TextEdit, TransformMode, TransformSession, TypeTransform};
+pub use transform::{
+    BoxResize, CamTransform, ContentAwareOptions, Extras, MadeLayer, TextEdit, TransformMode, TransformSession, TypeInsertionStyle, TypeTransform,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Panels {
@@ -220,6 +222,9 @@ pub struct UiState {
     /// Inline type editing session, if any.
     #[serde(default)]
     pub text_edit: Option<TextEdit>,
+    /// Font for subsequent typing at this caret, separate from existing character runs.
+    #[serde(default)]
+    pub type_insertion_style: Option<TypeInsertionStyle>,
     /// Clock time in seconds when type cursor blink was last reset (e.g. on keypress/caret move).
     #[serde(skip)]
     pub caret_blink_time: f64,
@@ -499,6 +504,7 @@ impl Default for UiState {
             recent_files: Vec::new(),
             recent_fonts: Vec::new(),
             text_edit: None,
+            type_insertion_style: None,
             caret_blink_time: 0.0,
             text_edit_return_tool: None,
             type_transform: None,
@@ -662,6 +668,11 @@ mod tests {
 
     #[test]
     fn tool_names_parse() {
+        basic_and_retouch_tool_names_parse();
+        vector_tool_names_parse();
+    }
+
+    fn basic_and_retouch_tool_names_parse() {
         assert_eq!(Tool::from_name("brush"), Some(Tool::Brush));
         assert_eq!(Tool::from_name("Rect"), Some(Tool::RectMarquee));
         assert_eq!(Tool::from_name("RectMarquee"), Some(Tool::RectMarquee));
@@ -680,6 +691,9 @@ mod tests {
         assert_eq!(Tool::from_name("patternStamp"), Some(Tool::PatternStamp));
         assert_eq!(Tool::from_name("Pattern Stamp Tool"), Some(Tool::PatternStamp));
         assert_eq!(Tool::ALL.len(), 68);
+    }
+
+    fn vector_tool_names_parse() {
         assert_eq!(Tool::from_name("Vertical Type Mask Tool"), Some(Tool::VerticalTypeMask));
         assert_eq!(Tool::from_name("addAnchorPoint"), Some(Tool::AddAnchorPoint));
         assert_eq!(Tool::from_name("Delete Anchor Point Tool"), Some(Tool::DeleteAnchorPoint));
