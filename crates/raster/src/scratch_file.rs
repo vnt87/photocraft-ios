@@ -141,7 +141,9 @@ impl ScratchFile {
             options.custom_flags(FILE_FLAG_DELETE_ON_CLOSE);
         }
         let main = options.open(&path)?;
-        #[cfg(unix)]
+        // iPadOS is excluded: the scratch volume always accepts the unlink-at-creation below, so no
+        // abandoned names exist to reap, and libproc can't enumerate processes to test liveness.
+        #[cfg(all(unix, not(target_os = "ios")))]
         reap_abandoned(dir, &main);
         // Unix: the open handle keeps the inode; nothing is left behind at any exit. A
         // filesystem that refuses the unlink keeps the name until drop or the next reap.
@@ -232,7 +234,7 @@ impl ScratchFile {
 }
 
 /// Accept only the names we generate, never other temporary files or directories.
-#[cfg(any(unix, test))]
+#[cfg(any(all(unix, not(target_os = "ios")), test))]
 fn scratch_pid(name: &str) -> Option<u32> {
     let (pid, nonce) = name.strip_prefix("photocraft-")?.strip_suffix(".scratch")?.split_once('-')?;
     if pid.is_empty() || nonce.is_empty() || !pid.bytes().chain(nonce.bytes()).all(|b| b.is_ascii_digit()) {
@@ -242,7 +244,7 @@ fn scratch_pid(name: &str) -> Option<u32> {
     (pid > 0 && nonce.parse::<u128>().is_ok()).then_some(pid)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 fn reap_abandoned(dir: &Path, own: &File) {
     use std::os::unix::fs::MetadataExt;
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
@@ -256,7 +258,7 @@ fn reap_abandoned(dir: &Path, own: &File) {
     reap_with(dir, metadata.uid(), |pid| system.process(Pid::from_u32(pid)).is_some());
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "ios")))]
 fn reap_with(dir: &Path, uid: u32, live: impl Fn(u32) -> bool) {
     use std::os::unix::fs::MetadataExt;
     let Ok(entries) = std::fs::read_dir(dir) else { return };

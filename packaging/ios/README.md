@@ -50,3 +50,24 @@ The asset catalog's `AppIcon` is the PhotoCraft kitsune from `assets/app-icon/`
 (attributed in `ATTRIBUTION.md`), flattened onto the full-bleed `#2f7bf5` field with no
 alpha channel, since iOS applies its own corner mask and rejects transparency. It is one
 1024 pt image that Xcode scales to every iPad size.
+
+## Carried patches over upstream
+
+Some upstream code builds for macOS, Windows, Linux and wasm but not for iPadOS, so the port carries a local gate.
+Re-check these after every upstream merge: if upstream rewrites the patched lines, the gate is lost silently and the
+next device build fails with an error that does not point back here.
+
+- **`crates/raster` — `sysinfo` is off the iOS build.** The RAM size and scratch-volume free space behind the memory
+  limit and the spill check come from `sysinfo`, whose Apple backend calls libproc (`proc_pidinfo`,
+  `PROC_PIDLISTFDS`, `proc_fdinfo`) — symbols iOS does not expose, so the crate fails to compile for
+  `aarch64-apple-ios`. `Cargo.toml` gates the dependency on
+  `cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))` (`rayon` stays: the iPad has cores to use), and the
+  three call sites fall back to what the web build already does — `memory::measure()` returns `Snapshot::default()`
+  (the explicit MB limit governs), `spill::free_space()` returns `None` (skips only the free-space check, not
+  spilling), and `scratch_file`'s cross-process reap is skipped (iOS cannot enumerate processes to test liveness, and
+  the scratch volume accepts the unlink-at-creation, so no abandoned names exist to reap).
+  Gate check: `cargo check -p photocraft-raster --target aarch64-apple-ios` and the same for
+  `aarch64-apple-ios-sim` (the Simulator is also `target_os = "ios"`) must stay clean, and so must the sync plan's
+  Tier 1 `cargo check -p photocraft-ios --lib --target aarch64-apple-ios-sim`. Carried since 2026-11-03 (upstream
+  v0.20.1 added the feature); the two raster checks passed and `cargo xtask ios --device` built, installed and
+  launched on iPadOS 27.0.1. This belongs upstream and should go there so the gate stops being local.

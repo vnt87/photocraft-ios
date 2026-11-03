@@ -14,10 +14,14 @@ serde = { workspace = true }
 crc32fast = "1"
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
 
-# Native only: converting a region's tiles is independent per tile, so it runs on all cores;
-# sysinfo reads the physical RAM size for the memory limit and the scratch volume's free space.
+# Native only: converting a region's tiles is independent per tile, so it runs on all cores.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = { workspace = true }
+
+# Reads the physical RAM size for the memory limit and the scratch volume's free space. iPadOS is
+# excluded: sysinfo's Apple backend calls libproc (`proc_pidinfo`, `PROC_PIDLISTFDS`), which iOS
+# doesn't expose, so the iOS runner keeps the explicit MB limit and skips the probes, as web clients do.
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
 sysinfo = { version = "0.37", default-features = false, features = ["system", "disk"] }
 
 [dev-dependencies]

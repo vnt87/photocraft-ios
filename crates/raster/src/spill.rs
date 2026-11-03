@@ -505,7 +505,7 @@ fn no_room(dir: &Path, cap: Option<u64>) -> String {
 
 /// (available, total) bytes of the volume holding `dir`: the mount point that is its longest
 /// prefix. `None` if unknown, which disables only the free-space check, not spilling.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 fn free_space(dir: &Path) -> Option<(u64, u64)> {
     let dir = std::fs::canonicalize(dir).ok()?;
     let disks = sysinfo::Disks::new_with_refreshed_list_specifics(sysinfo::DiskRefreshKind::nothing().with_storage());
@@ -517,7 +517,7 @@ fn free_space(dir: &Path) -> Option<(u64, u64)> {
         .map(|d| (d.available_space(), d.total_space()))
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", target_os = "ios"))]
 fn free_space(_dir: &Path) -> Option<(u64, u64)> {
     None
 }

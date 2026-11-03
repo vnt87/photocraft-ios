@@ -1,7 +1,7 @@
 //! Process-wide memory admission and adaptive tile residency. Native measurements are safe
 //! `sysinfo` calls; web clients retain their explicit MB limit without filesystem assumptions.
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -73,7 +73,7 @@ pub fn configuration_generation() -> u64 {
     CONFIGURATION.load(Ordering::Relaxed)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 pub fn measure() -> Snapshot {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
     static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
@@ -89,7 +89,9 @@ pub fn measure() -> Snapshot {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+/// No measurement is available (web clients, and iPadOS where libproc is absent): the explicit
+/// MB limit governs, exactly as the web build's `Snapshot::default()` path does.
+#[cfg(any(target_arch = "wasm32", target_os = "ios"))]
 pub fn measure() -> Snapshot {
     Snapshot::default()
 }
