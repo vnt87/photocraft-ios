@@ -1,5 +1,6 @@
-//! Safe-area diagnostics for the iPad runner. The wrapper forwards every frame to the app and
-//! logs the egui rectangles next to UIKit's window metrics, but only when they change.
+//! Safe-area diagnostics and the hardware keyboard for the iPad runner. The wrapper forwards every
+//! frame to the app and logs the egui rectangles next to UIKit's window metrics, but only when they
+//! change, and injects the keys winit's UIKit view never delivers.
 //!
 //! winit sizes the Metal surface to the safe area while egui lays out the full view; logging
 //! both sides lets a device run show whether they agree.
@@ -10,11 +11,15 @@ use objc2_foundation::MainThreadMarker;
 pub struct SafeAreaProbe<A> {
     inner: A,
     last: Option<String>,
+    /// Hardware-keyboard state: the keys winit never delivers (Enter, arrows, ⌘ shortcuts).
+    keys: crate::hw_keys::HwKeys,
+    /// Events produced outside the input hook (releasing keys on focus loss), sent with the next frame.
+    pending: Vec<egui::Event>,
 }
 
 impl<A> SafeAreaProbe<A> {
     pub fn new(inner: A) -> Self {
-        Self { inner, last: None }
+        Self { inner, last: None, keys: Default::default(), pending: Vec::new() }
     }
 
     /// Logs what egui lays out with: the persisted insets, not the per-frame raw input, which only
@@ -49,6 +54,10 @@ impl<A> SafeAreaProbe<A> {
 impl<A: eframe::App> eframe::App for SafeAreaProbe<A> {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.report(ctx);
+        if !ctx.input(|i| i.focused) {
+            // Key-ups may never arrive once the app is in the background.
+            self.pending.extend(self.keys.release_all());
+        }
         self.inner.logic(ctx, frame);
     }
 
@@ -57,6 +66,15 @@ impl<A: eframe::App> eframe::App for SafeAreaProbe<A> {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let now = raw_input.time.unwrap_or_default();
+        for (code, pressed) in crate::gc_keyboard::drain() {
+            raw_input.events.extend(self.keys.handle(code, pressed, now));
+        }
+        raw_input.events.append(&mut self.pending);
+        raw_input.events.extend(self.keys.tick(now));
+        if let Some(wait) = self.keys.next_wake(now) {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait.max(0.001)));
+        }
         self.inner.raw_input_hook(ctx, raw_input);
         // egui-winit reads the insets from a foreground scene's key window and reports zero until
         // that window exists (launch, scene activation). UIKit's window is the source of truth.

@@ -9,6 +9,11 @@ mod apple_entry;
 mod clipboard;
 #[cfg(any(target_os = "ios", test))]
 mod documents;
+#[cfg(target_os = "ios")]
+#[allow(unsafe_code)]
+mod gc_keyboard;
+#[cfg(any(target_os = "ios", test))]
+mod hw_keys;
 #[cfg(any(target_os = "ios", test))]
 mod logging;
 /// Apple Pencil input; the mapping and state machine are platform-free and host-tested.
@@ -87,6 +92,9 @@ pub fn run() -> Result<(), String> {
             native_options(),
             Box::new(|cc| {
                 scenes::attach(cc)?;
+                // Enter, arrows, Escape, F-keys and every ⌘ chord: winit's UIKit view forwards only
+                // text and Backspace, so the hardware keyboard is read separately and injected.
+                gc_keyboard::install(cc.egui_ctx.clone());
                 // The bootstrap uses winit's app-delegate lifecycle without UIKit scenes.
                 // Hide the status bar through the safe platform API so it cannot overlay
                 // egui's menu while scene-based safe-area handling is still unavailable.

@@ -62,6 +62,7 @@ exhaustive). Gestures (pinch, pan, rotate), multitasking, picker cancel, layered
 | Touch Bar | yes (Intel Macs) | no | missing (low value) |
 | Touch screens (Windows) | yes | basic pointer only | partial |
 | Touch (iPadOS) | yes | gesture engine and runner implemented and host-tested; pinch, two-finger pan and rotation not yet exercised on hardware | partial (unverified on device) |
+| Hardware keyboard (iPadOS) | no equivalent | the runner reads the keys a USB/Bluetooth keyboard sends and injects what iPadOS gives the app through winit: Enter, arrows, Esc, Home/End, Page Up/Down, Delete, Tab, F-keys, ⌘/Ctrl chords with their modifiers and key repeat (`apps/photocraft-ios/src/{gc_keyboard,hw_keys}.rs`, host-tested) | implemented, not verified on a device |
 | 3D mouse, MIDI, Surface Dial | Surface Dial on Windows | no | missing (low value) |
 | Scanners (WIA / TWAIN) | WIA menu (Windows) | menu item live; no driver integration | partial |
 
@@ -69,6 +70,7 @@ exhaustive). Gestures (pinch, pan, rotate), multitasking, picker cancel, layered
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-03 | minor | iPadOS hardware keyboard: the runner takes the keys iPadOS withholds from winit (Enter, arrows, Esc, F-keys, ⌘ chords, modifiers, repeat) from `GCKeyboard` and injects them, so the shortcuts work with a Logitech Folio attached. Host-tested; not yet run on a device. Known gap: ⌘/Option+Backspace (delete word/line) stays UIKit's plain Backspace |
 | 2026-10-10 | major | First version |
 | 2026-10-19 | minor | Graphics Adapter choice on Linux (#1885) |
 | 2026-10-17 | minor | GPU filters: Camera Raw's preview, per-pixel stages (#6916 step 1) |
