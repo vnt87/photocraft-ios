@@ -62,12 +62,15 @@ next device build fails with an error that does not point back here.
   `PROC_PIDLISTFDS`, `proc_fdinfo`) — symbols iOS does not expose, so the crate fails to compile for
   `aarch64-apple-ios`. `Cargo.toml` gates the dependency on
   `cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))` (`rayon` stays: the iPad has cores to use), and the
-  three call sites fall back to what the web build already does — `memory::measure()` returns `Snapshot::default()`
-  (the explicit MB limit governs), `spill::free_space()` returns `None` (skips only the free-space check, not
-  spilling), and `scratch_file`'s cross-process reap is skipped (iOS cannot enumerate processes to test liveness, and
-  the scratch volume accepts the unlink-at-creation, so no abandoned names exist to reap).
+  call sites fall back to what the web build already does — `memory::measure()` returns `Snapshot::default()`
+  (the explicit MB limit governs), and `scratch_file`'s cross-process reap is skipped (iOS cannot enumerate processes
+  to test liveness, and the scratch volume accepts the unlink-at-creation, so no abandoned names exist to reap).
+  Upstream's `spill.rs` (the 2026-11-08 sync) measures the scratch volume's free space with `statvfs` on every Unix
+  target, iOS included, so the free-space check now runs on the iPad instead of being skipped. The iOS gates in
+  `scratch_file.rs` (`reap_abandoned`, `reap_with`, `scratch_pid`, and the call in `open_private`) are re-applied on
+  top of upstream's restructured `open_private`.
   Gate check: `cargo check -p photocraft-raster --target aarch64-apple-ios` and the same for
   `aarch64-apple-ios-sim` (the Simulator is also `target_os = "ios"`) must stay clean, and so must the sync plan's
   Tier 1 `cargo check -p photocraft-ios --lib --target aarch64-apple-ios-sim`. Carried since 2026-11-03 (upstream
-  v0.20.1 added the feature); the two raster checks passed and `cargo xtask ios --device` built, installed and
+  v0.20.1 added the feature; re-applied after the 2026-11-08 upstream sync); the two raster checks passed and `cargo xtask ios --device` built, installed and
   launched on iPadOS 27.0.1. This belongs upstream and should go there so the gate stops being local.
