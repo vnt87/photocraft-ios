@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (Photomerge implementation status corrected; real-world quality validation remains open) · **Target:** Adobe Photoshop 2026
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-11-12 · **Change:** minor (M11: the desktop app connects to MCP clients from Edit › Preferences › AI Integrations, no terminal, no restart; alpha gate, focus and estimates unchanged; Photomerge implementation status corrected, real-world quality validation remains open) · **Target:** Adobe Photoshop 2026
 
 - UI.5: Panels can detach, join other tab groups, split, resize and redock through shared docking transactions. Custom layouts persist with workspaces, respect workspace locking, and retain collapse flags for intact native groups.
 
@@ -117,6 +117,7 @@ Each milestone has a **definition of done (DoD)** and must leave `main` green on
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | iPadOS runner (`apps/photocraft-ios`) integrated on `feature/ipados-xcode-runner`: physical-device acceptance partial (INT-2 open); see `plans/` |
+| 2026-11-12 | minor | M11: Edit › Preferences › AI Integrations connects MCP clients to the running app without a terminal or restart; milestones, alpha gate and estimates unchanged |
 | 2026-10-11 | minor | Linked adaptive Unsharp Mask performance and quality evidence; milestones, alpha gate and estimates unchanged |
 | 2026-10-10 | minor | Photomerge is implemented; real-world quality validation remains open |
 | 2026-10-10 | minor | Alpha gate table (core-workflow gate): passes, stage stays alpha |
