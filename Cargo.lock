@@ -5740,6 +5740,7 @@ name = "photocraft-ios"
 version = "0.23.1"
 dependencies = [
  "block2 0.6.2",
+ "craft-image-codecs",
  "dispatch2",
  "eframe",
  "egui",
@@ -5749,7 +5750,6 @@ dependencies = [
  "objc2-game-controller",
  "objc2-ui-kit 0.3.2",
  "objc2-uniform-type-identifiers 0.3.2",
- "photocraft-codecs",
  "photocraft-color",
  "photocraft-doc",
  "photocraft-engine",
