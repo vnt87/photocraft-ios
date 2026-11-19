@@ -240,10 +240,12 @@ mod tests {
     #[test]
     fn a_touch_feeds_every_coalesced_sample_and_marks_the_pen() {
         let (mut b, feed) = bridge();
-        b.pen_began(42, &[reading(1.0), reading(2.0)]);
+        b.pen_began(42, &[reading(1.0)]);
+        assert_eq!(feed.get().map(|s| s.pressure), Some(0.25));
+        b.pen_moved(&[reading(2.0)]);
+        assert_eq!(feed.get().map(|s| s.pressure), Some(0.5));
         b.pen_moved(&[reading(3.0)]);
-        let got: Vec<f32> = feed.drain().iter().map(|s| s.pressure).collect();
-        assert_eq!(got, vec![0.25, 0.5, 0.75]);
+        assert_eq!(feed.get().map(|s| s.pressure), Some(0.75));
         assert!(feed.is_pen_touch(42));
         assert!((feed.get().map_or(0.0, |s| s.tilt_x) - 45.0).abs() < 1e-3);
         b.pen_ended();

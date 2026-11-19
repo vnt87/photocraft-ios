@@ -115,7 +115,7 @@ pub fn run() -> Result<(), String> {
                         &mut app,
                         "Platform services unavailable",
                         vec!["File access and persistence could not be initialized. Documents remain in this session only; check the runner log.".into()],
-                        true,
+                        craft::theme::variant::Tone::Bad,
                         None,
                     );
                 }
@@ -186,7 +186,8 @@ mod tests {
     #[test]
     fn ios_services_do_not_claim_unimplemented_file_or_clipboard_support() {
         let services = super::ios_services();
-        assert!(services.file_dialog.is_none());
+        assert!(services.files.is_none());
+        assert!(services.settings.is_none());
         assert!(services.write.is_none());
         assert!(services.save_file.is_none());
         assert!(services.clipboard_set_image.is_none());

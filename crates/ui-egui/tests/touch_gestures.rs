@@ -3,16 +3,17 @@
 //! pinch zooms the view, two-finger rotation turns the view without touching layer pixels, and a
 //! resting palm leaves nothing on the layer while the stylus stroke is committed.
 
+use craft::behavior::kurbo::Point;
+use craft::behavior::CanvasView;
 use egui::{Modifiers, PointerButton, Pos2};
 use photocraft_doc::LayerId;
 use photocraft_geom::Rect;
 use photocraft_testkit::touch_sim::{Phase, TouchSample, TouchStreamBuilder};
 use photocraft_ui_egui::PhotocraftApp;
-use photocraft_ui_egui::canvas::ViewXform;
 use photocraft_ui_egui::stylus::PenSample;
 use serde_json::json;
 
-type Harness = egui_kittest::Harness<'static, PhotocraftApp>;
+type Harness = egui_kittest::Harness<'static, Box<PhotocraftApp>>;
 
 const W: usize = 400;
 const H: usize = 300;
@@ -60,17 +61,17 @@ fn canvas_center(h: &Harness) -> Pos2 {
     h.state().last_canvas_rect.center()
 }
 
-fn xform(h: &Harness) -> ViewXform {
+fn xform(h: &Harness) -> CanvasView {
     let app = h.state();
     let v = &app.ui.views[0];
-    ViewXform {
-        rect: photocraft_ui_egui::rulers::content_rect(app, app.last_canvas_rect),
-        zoom: v.zoom,
-        center: v.center,
-        flip: app.ui.view.flip_horizontal,
-        rotation: v.rotation,
-        aspect: app.ui.view.display_aspect(),
-    }
+    CanvasView::new(
+        app.last_canvas_rect,
+        Point::new(f64::from(v.center[0]), f64::from(v.center[1])),
+        CanvasView::points_per_unit(f64::from(v.zoom), app.ppp),
+    )
+    .rotation(f64::from(v.rotation))
+    .flip_x(app.ui.view.flip_horizontal)
+    .aspect(f64::from(app.ui.view.display_aspect()))
 }
 
 fn to_event(s: &TouchSample) -> egui::Event {
@@ -202,7 +203,12 @@ fn dark_pixels(px: &[[f32; 4]], rows: std::ops::Range<usize>) -> usize {
 
 fn row(h: &Harness, doc_y: f32, x0: f32, x1: f32, n: usize) -> Vec<Pos2> {
     let xf = xform(h);
-    (0..=n).map(|i| xf.to_screen(x0 + (x1 - x0) * i as f32 / n as f32, doc_y)).collect()
+    (0..=n)
+        .map(|i| {
+            let x = x0 + (x1 - x0) * i as f32 / n as f32;
+            xf.to_screen(Point::new(f64::from(x), f64::from(doc_y)))
+        })
+        .collect()
 }
 
 #[test]
@@ -231,6 +237,7 @@ fn test_palm_rejection_with_stylus() {
     h.run_steps(2);
     let palm = row(&h, 220.0, 60.0, 340.0, 14);
     finger_stroke(&mut h, &palm);
-    assert_eq!(pixels(&h, layer), after_pen, "the palm leaves nothing; only the stylus stroke is on the layer");
+    let after_palm = pixels(&h, layer);
+    assert_eq!(after_palm, after_pen, "the palm leaves nothing; only the stylus stroke is on the layer");
     h.state().stylus.feed.set(None);
 }

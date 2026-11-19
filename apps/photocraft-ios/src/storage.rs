@@ -1,5 +1,6 @@
 //! Sandbox-local preferences, lossless document codecs, and durable crash recovery.
 use photocraft_doc::Document;
+use photocraft_engine::prefs::SavedPrefs;
 use photocraft_format::{RecoveryEntry, RecoveryStore};
 use photocraft_ui_egui::{ExportSettings, Recoverable, Services};
 use std::{
@@ -10,7 +11,6 @@ use std::{
     rc::Rc,
 };
 
-const MAX_PREFS: u64 = 4 * 1024 * 1024;
 const MAX_METADATA: u64 = 64 * 1024;
 
 fn container_prefix(prefix: &str) -> bool {
@@ -64,22 +64,20 @@ fn remap_managed_path(path: &str, root: &Path) -> Option<String> {
     (destination != path).then(|| destination.to_owned())
 }
 
-fn remap_recent_files(text: String, root: &Path) -> String {
-    if text.len() as u64 > MAX_PREFS {
-        return text;
-    }
-    let Ok(mut prefs) = serde_json::from_str::<serde_json::Value>(&text) else { return text };
-    let Some(recent) = prefs.get_mut("fileHandling").and_then(|p| p.get_mut("recentFiles")).and_then(serde_json::Value::as_array_mut) else { return text };
-    let mut changed = false;
-    for entry in recent {
-        if let Some(path) = entry.as_str().and_then(|p| remap_managed_path(p, root)) {
-            *entry = path.into();
-            changed = true;
+/// The recent files of `saved` whose container moved point at the managed copy under `root`; every
+/// other preference (and every path outside this container) is left as it is. `None` when nothing
+/// moved.
+fn remap_saved_recent(saved: &SavedPrefs, root: &Path) -> Option<SavedPrefs> {
+    let mut changed = saved.clone();
+    let mut any = false;
+    for path in &mut changed.prefs.file_handling.recent_files {
+        if let Some(current) = remap_managed_path(path, root) {
+            *path = current;
+            any = true;
         }
     }
-    if changed { serde_json::to_string(&prefs).unwrap_or(text) } else { text }
+    any.then_some(changed)
 }
-
 /// Resolve only the supplied sandbox HOME; never fall back to desktop configuration paths.
 pub fn app_support_dir(home: Option<OsString>) -> Result<PathBuf, String> {
     let home = PathBuf::from(home.ok_or("iOS sandbox HOME is unavailable")?);
@@ -161,21 +159,16 @@ pub fn install(services: &mut Services, root: PathBuf) -> Result<(), String> {
         return Err("Application Support must be an absolute directory".into());
     }
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    let prefs = root.join("preferences.json");
-    let prefs_load = prefs.clone();
-    let prefs_root = root.clone();
     services.import = Some(Box::new(import_document));
     services.export = Some(Box::new(export_document));
-    services.load_prefs = Some(Box::new(move || {
-        let text = String::from_utf8(bounded_read(&prefs_load, MAX_PREFS).ok()?).ok()?;
-        Some(remap_recent_files(text, &prefs_root))
-    }));
-    services.save_prefs = Some(Box::new(move |text| {
-        if text.len() as u64 > MAX_PREFS {
-            return Err("preferences exceed their size limit".into());
-        }
-        photocraft_format::atomic_write(&prefs, text.as_bytes()).map_err(|e| e.to_string())
-    }));
+    // The shared settings store: `config.toml` here, importing the older `preferences.json` while
+    // there is none. An app update can move the container, so a recent file that still names the
+    // old one is pointed at its managed copy before the session reads it.
+    let (mut store, report) = craft::settings::SettingsStore::open_with(photocraft_engine::prefs::store_options(Some(&root)));
+    if let Some(remapped) = remap_saved_recent(store.get(), &root) {
+        store.update(|saved| *saved = remapped);
+    }
+    services.settings = Some((store, report));
     let dir = root.join("Recovery");
     let store = Rc::new(RefCell::new(RecoveryStore::new(&dir)));
     let s = store.clone();

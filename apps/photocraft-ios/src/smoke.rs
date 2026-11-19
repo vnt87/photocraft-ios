@@ -11,15 +11,17 @@ pub fn run(app: &mut PhotocraftApp, mode: &str) -> Result<(), String> {
         return Err("native clipboard pixels changed".into());
     }
     log::info!("iOS service smoke: native clipboard roundtrip passed");
-    let previous = app.services.load_prefs.as_mut().and_then(|load| load());
-    let text = serde_json::to_string(app.session.prefs()).map_err(|error| error.to_string())?;
-    app.services.save_prefs.as_mut().ok_or("preferences writer unavailable")?(&text)?;
-    if app.services.load_prefs.as_mut().and_then(|load| load()).as_deref() != Some(text.as_str()) {
+    let (store, report) = app.services.settings.as_mut().ok_or("preferences store unavailable")?;
+    let dir = report.dir.clone().ok_or("preferences folder unavailable")?;
+    let previous = store.get().clone();
+    let saved = app.session.saved_prefs();
+    store.update(|p| *p = saved.clone());
+    store.flush().map_err(|error| error.to_string())?;
+    if photocraft_engine::prefs::read_saved(Some(&dir)) != saved {
         return Err("native preferences roundtrip failed".into());
     }
-    if let Some(previous) = previous {
-        app.services.save_prefs.as_mut().ok_or("preferences writer unavailable")?(&previous)?;
-    }
+    store.update(|p| *p = previous);
+    store.flush().map_err(|error| error.to_string())?;
     log::info!("iOS service smoke: sandbox preferences roundtrip passed");
     match mode {
         "clipboard" => {}

@@ -25,6 +25,8 @@ photocraft-color = { workspace = true }
 photocraft-format = { workspace = true }
 photocraft-io = { workspace = true }
 photocraft-codecs = { workspace = true }
+# The host's file service (`craft::host::Files`) and the shared settings store.
+craft = { workspace = true, features = ["settings"] }
 serde_json = { workspace = true }
 photocraft-ui-egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit"] }

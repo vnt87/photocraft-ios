@@ -21,7 +21,9 @@
 
 use egui::{Pos2, Rect, Vec2};
 
-use crate::canvas::ViewXform;
+use craft::behavior::canvas::ZoomLadder;
+use craft::behavior::kurbo::Size;
+use craft::behavior::CanvasView;
 use crate::state::View;
 
 /// Finger distances (points) at or below this give no reliable scale or angle.
@@ -88,6 +90,9 @@ pub struct GestureRecognizer {
     last_frame: Option<u64>,
     /// Finger contacts currently down (tracked or not), for [`Self::blocks_painting`].
     down: Vec<u64>,
+    /// A pass blocked the emulated pointer's press, and the press has not come up yet
+    /// ([`Self::blocks_painting`]).
+    swallowed_press: bool,
     /// The touch driving egui-winit's emulated pointer (the first one to land while none did),
     /// and whether it is a pen.
     pointer: Option<(u64, bool)>,
@@ -108,6 +113,20 @@ fn wrap_rad(a: f32) -> f32 {
         x -= tau;
     } else if x <= -std::f32::consts::PI {
         x += tau;
+    }
+    x
+}
+
+/// `a` wrapped to (-180, 180], as the view's rotation is stored.
+fn wrap_deg(a: f32) -> f32 {
+    if !a.is_finite() {
+        return 0.0;
+    }
+    let mut x = a % 360.0;
+    if x > 180.0 {
+        x -= 360.0;
+    } else if x <= -180.0 {
+        x += 360.0;
     }
     x
 }
@@ -133,9 +152,21 @@ impl GestureRecognizer {
     /// Should the canvas ignore the emulated pointer (no painting, no tool drag)? True during a
     /// two-finger gesture, and for a lone finger while a stylus is touching or hovering (palm).
     /// A pen that owns the emulated pointer is never blocked by a resting palm.
-    pub fn blocks_painting(&self, stylus_active: bool) -> bool {
+    ///
+    /// A press swallowed this way stays swallowed until the pointer comes up: the canvas skips the
+    /// tool host on a blocked pass, so the host never saw the press and would deliver the whole
+    /// press, drag and release on the first pass it runs again (a palm's stroke appearing at once).
+    /// `pointer_live` is egui's `any_down() || any_released()`; the release's own pass still counts,
+    /// since the host would deliver the press and the release together there.
+    pub fn blocks_painting(&mut self, stylus_active: bool, pointer_live: bool) -> bool {
         let pen_drives_pointer = matches!(self.pointer, Some((_, true)));
-        self.is_gesturing() || (stylus_active && !self.down.is_empty() && !pen_drives_pointer)
+        let block = self.is_gesturing() || (stylus_active && !self.down.is_empty() && !pen_drives_pointer);
+        if block && pointer_live {
+            self.swallowed_press = true;
+        } else if !pointer_live {
+            self.swallowed_press = false;
+        }
+        block || (self.swallowed_press && pointer_live)
     }
 
     /// Mirror egui-winit's choice of the touch that drives the emulated pointer.
@@ -271,8 +302,8 @@ fn dist_angle(a: Pos2, b: Pos2) -> (f32, f32) {
 /// pan, so the document point that was under the fingers stays under them. `xf` is the view's
 /// mapping before the change and `ppp` the canvas's pixels per point. Returns false (and leaves
 /// the view alone) for unusable input.
-pub fn apply_to_view(view: &mut View, xf: &ViewXform, d: &GestureDelta, ppp: f32) -> bool {
-    let ppp = if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 };
+pub fn apply_to_view(view: &mut View, xf: &CanvasView, d: &GestureDelta, ppp: f32) -> bool {
+    let ppp = if ppp.is_finite() && ppp > 0.0 { f64::from(ppp) } else { 1.0 };
     let ok = d.zoom_factor.is_finite()
         && d.zoom_factor > 0.0
         && d.rotation_delta_rad.is_finite()
@@ -287,18 +318,21 @@ pub fn apply_to_view(view: &mut View, xf: &ViewXform, d: &GestureDelta, ppp: f32
         return false;
     }
     let anchor = xf.to_doc(d.pivot);
-    let new_zoom = crate::zoom_levels::clamp(view.zoom * d.zoom_factor, view.doc_size);
+    let size = Size::new(f64::from(view.doc_size[0]), f64::from(view.doc_size[1]));
+    let new_zoom = ZoomLadder::clamp(f64::from(view.zoom) * f64::from(d.zoom_factor), size);
     // A mirrored view turns the opposite way on screen for the same document rotation.
-    let sign = if xf.flip { -1.0 } else { 1.0 };
-    let new_rotation = crate::rotate_view::wrap_deg(view.rotation + sign * d.rotation_delta_rad.to_degrees());
-    let next = ViewXform { zoom: new_zoom / ppp, rotation: new_rotation, ..*xf };
+    let sign = if xf.flip_x { -1.0 } else { 1.0 };
+    let new_rotation = wrap_deg(view.rotation + sign * d.rotation_delta_rad.to_degrees());
+    let mut next = *xf;
+    next.zoom = new_zoom / ppp;
+    next.rotation = f64::from(new_rotation);
     let target = d.pivot + d.pan_delta;
-    let u = next.unmap_vec((target - next.rect.center()) / next.zoom);
-    let center = [anchor[0] as f32 - u.x, anchor[1] as f32 - u.y];
+    let u = next.unmap_vec(target - next.rect.center());
+    let center = [(anchor.x - u.x) as f32, (anchor.y - u.y) as f32];
     if !(center[0].is_finite() && center[1].is_finite()) {
         return false;
     }
-    view.zoom = new_zoom;
+    view.zoom = new_zoom as f32;
     view.rotation = new_rotation;
     view.center = center;
     true
@@ -306,6 +340,7 @@ pub fn apply_to_view(view: &mut View, xf: &ViewXform, d: &GestureDelta, ppp: f32
 
 #[cfg(test)]
 mod tests {
+    use craft::behavior::kurbo::Point;
     use egui::{pos2, vec2};
 
     use super::*;
@@ -320,12 +355,18 @@ mod tests {
         assert!(r.update(tp(2, b.0, b.1, TouchPhase::Start), false).is_none());
     }
 
-    fn xf(rotation: f32, flip: bool) -> ViewXform {
-        ViewXform { rect: Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0)), zoom: 1.0, center: [400.0, 300.0], flip, rotation, aspect: 1.0 }
+    fn xf(rotation: f32, flip: bool) -> CanvasView {
+        CanvasView::new(Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0)), Point::new(400.0, 300.0), 1.0)
+            .rotation(f64::from(rotation))
+            .flip_x(flip)
     }
 
-    fn xf_of(view: &View, base: &ViewXform, ppp: f32) -> ViewXform {
-        ViewXform { zoom: view.zoom / ppp, center: view.center, rotation: view.rotation, ..*base }
+    fn xf_of(view: &View, base: &CanvasView, ppp: f32) -> CanvasView {
+        let mut next = *base;
+        next.zoom = f64::from(view.zoom) / f64::from(ppp);
+        next.center = Point::new(f64::from(view.center[0]), f64::from(view.center[1]));
+        next.rotation = f64::from(view.rotation);
+        next
     }
 
     #[test]
@@ -468,13 +509,42 @@ mod tests {
     #[test]
     fn palm_rejection_blocks_a_lone_finger_while_the_stylus_is_active() {
         let mut r = GestureRecognizer::default();
-        assert!(!r.blocks_painting(true), "nothing down");
+        assert!(!r.blocks_painting(true, false), "nothing down");
         r.update(tp(1, 10.0, 10.0, TouchPhase::Start), true);
-        assert!(r.blocks_painting(true));
-        assert!(!r.blocks_painting(false), "a lone finger paints when there is no stylus");
+        assert!(r.blocks_painting(true, true));
         assert!(r.update(tp(1, 90.0, 90.0, TouchPhase::Move), true).is_none());
         r.update(tp(1, 90.0, 90.0, TouchPhase::End), true);
-        assert!(!r.blocks_painting(true));
+        assert!(!r.blocks_painting(true, false));
+        // A lone finger paints when there is no stylus.
+        let mut plain = GestureRecognizer::default();
+        plain.update(tp(1, 10.0, 10.0, TouchPhase::Start), false);
+        assert!(!plain.blocks_painting(false, true));
+    }
+
+    #[test]
+    fn a_palm_press_stays_swallowed_until_the_pointer_comes_up() {
+        let mut r = GestureRecognizer::default();
+        // The finger lands and presses: the pass blocks the press, and the canvas skips the tool host.
+        r.update(tp(1, 10.0, 10.0, TouchPhase::Start), true);
+        assert!(r.blocks_painting(true, true));
+        // The finger lifts: the touch is gone, but the emulated pointer's release is still this
+        // pass's, and the host would deliver the press and the release together. Keep blocking.
+        r.update(tp(1, 90.0, 90.0, TouchPhase::End), true);
+        assert!(r.blocks_painting(true, true), "the release pass stays blocked");
+        // The pointer is up: the next press is the tool's own.
+        assert!(!r.blocks_painting(true, false));
+        assert!(!r.blocks_painting(true, true), "nothing is left to swallow");
+    }
+
+    #[test]
+    fn a_two_finger_gesture_without_a_pointer_press_swallows_nothing() {
+        let mut r = GestureRecognizer::default();
+        down(&mut r, (100.0, 100.0), (200.0, 100.0));
+        assert!(r.blocks_painting(false, false));
+        r.update(tp(1, 0.0, 0.0, TouchPhase::End), false);
+        r.update(tp(2, 0.0, 0.0, TouchPhase::End), false);
+        assert!(!r.blocks_painting(false, false));
+        assert!(!r.blocks_painting(false, true), "a pointer press nobody blocked is the tool's");
     }
 
     #[test]
@@ -483,7 +553,7 @@ mod tests {
         down(&mut r, (100.0, 100.0), (200.0, 100.0));
         let d = r.update(tp(2, 300.0, 100.0, TouchPhase::Move), true);
         assert!(d.is_some());
-        assert!(r.blocks_painting(false), "a gesture never paints");
+        assert!(r.blocks_painting(false, false), "a gesture never paints");
     }
 
     #[test]
@@ -523,20 +593,20 @@ mod tests {
         // The pen alone, stylus active: it paints (before, it counted as a lone finger).
         r.feed_frame_with(1, &[ev(9, Start, 10.0, 10.0)], area, true, is_pen);
         assert_eq!(r.touch_count(), 0);
-        assert!(!r.blocks_painting(true));
+        assert!(!r.blocks_painting(true, false));
         // A palm lands while the pen draws: the pen owns the pointer, the stroke goes on.
         r.feed_frame_with(2, &[ev(1, Start, 200.0, 300.0), ev(9, Move, 20.0, 10.0)], area, true, is_pen);
         assert_eq!(r.touch_count(), 1);
-        assert!(!r.blocks_painting(true));
+        assert!(!r.blocks_painting(true, false));
         // A second finger with the palm is still a gesture, and the pen never joins one.
         let d = r.feed_frame_with(3, &[ev(2, Start, 300.0, 300.0), ev(9, Move, 90.0, 90.0)], area, true, is_pen);
-        assert!(d.is_empty() && r.is_gesturing() && r.blocks_painting(true));
+        assert!(d.is_empty() && r.is_gesturing() && r.blocks_painting(true, false));
         r.feed_frame_with(4, &[ev(2, End, 300.0, 300.0), ev(9, End, 90.0, 90.0)], area, true, is_pen);
         // The pen lifted: the resting palm is a palm again while the pen hovers.
-        assert!(r.blocks_painting(true));
-        assert!(!r.blocks_painting(false));
+        assert!(r.blocks_painting(true, false));
+        assert!(!r.blocks_painting(false, false));
         r.feed_frame_with(5, &[ev(1, End, 200.0, 300.0)], area, true, is_pen);
-        assert!(!r.blocks_painting(true));
+        assert!(!r.blocks_painting(true, false));
     }
 
     #[test]
@@ -547,16 +617,16 @@ mod tests {
         let mut r = GestureRecognizer::default();
         // egui-winit gives the pointer to the palm; the pen's touch never drives it.
         r.feed_frame_with(1, &[ev(1, Start, 200.0, 300.0), ev(9, Start, 10.0, 10.0)], area, true, is_pen);
-        assert!(r.blocks_painting(true));
+        assert!(r.blocks_painting(true, false));
         // The pointer owner is tracked even when it lands outside the canvas.
         r.feed_frame_with(2, &[ev(1, End, 200.0, 300.0), ev(9, End, 10.0, 10.0)], area, true, is_pen);
         r.feed_frame_with(3, &[ev(5, Start, 900.0, 900.0), ev(9, Start, 10.0, 10.0), ev(1, Start, 20.0, 20.0)], area, true, is_pen);
         assert_eq!(r.pointer, Some((5, false)));
-        assert!(r.blocks_painting(true), "a finger owns the pointer and the palm is down");
+        assert!(r.blocks_painting(true, false), "a finger owns the pointer and the palm is down");
         // Without a classifier every touch is a finger, as before.
         let mut plain = GestureRecognizer::default();
         plain.feed_frame(1, &[ev(9, Start, 10.0, 10.0)], area, true);
-        assert!(plain.blocks_painting(true));
+        assert!(plain.blocks_painting(true, false));
     }
 
     #[test]
@@ -571,14 +641,15 @@ mod tests {
     #[test]
     fn apply_keeps_the_document_point_under_the_fingers() {
         for (rot, flip, ppp) in [(0.0, false, 1.0), (33.0, false, 1.0), (-120.0, true, 2.0), (170.0, true, 1.0)] {
-            let base = ViewXform { zoom: 1.0 / ppp, rotation: rot, ..xf(rot, flip) };
+            let mut base = xf(rot, flip);
+            base.zoom = f64::from(1.0 / ppp);
             let mut view = View { zoom: 1.0, center: [400.0, 300.0], rotation: rot, ..Default::default() };
             let pivot = pos2(620.0, 180.0);
             let d = GestureDelta { pan_delta: vec2(15.0, 25.0), zoom_factor: 1.7, rotation_delta_rad: 0.4, pivot };
             let doc = base.to_doc(pivot);
             assert!(apply_to_view(&mut view, &base, &d, ppp));
             let after = xf_of(&view, &base, ppp);
-            let s = after.to_screen(doc[0] as f32, doc[1] as f32);
+            let s = after.to_screen(doc);
             assert!((s - (pivot + d.pan_delta)).length() < 0.05, "rot {rot} flip {flip}: {s:?}");
             assert!((view.zoom - 1.7).abs() < 1e-5);
             assert!(view.rotation > -180.0 && view.rotation <= 180.0);
@@ -648,7 +719,7 @@ mod tests {
             }
         }
         let after = xf_of(&view, &base, 1.0);
-        let s = after.to_screen(anchor[0] as f32, anchor[1] as f32);
+        let s = after.to_screen(anchor);
         assert!((s - pos2(400.0, 300.0)).length() < 0.1, "{s:?}");
         assert!((view.zoom - 2.0).abs() < 1e-3, "{}", view.zoom);
     }

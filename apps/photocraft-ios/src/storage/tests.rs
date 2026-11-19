@@ -30,6 +30,14 @@ fn completed(s: &mut Services) -> Result<(), String> {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }
+fn recent(s: &Services) -> Vec<String> {
+    s.settings.as_ref().map(|(store, _)| store.get().prefs.file_handling.recent_files.clone()).unwrap_or_default()
+}
+fn save_recent(s: &mut Services, paths: Vec<String>) {
+    let (store, _) = s.settings.as_mut().expect("the settings store");
+    store.update(|p| p.prefs.file_handling.recent_files = paths);
+    store.flush().unwrap();
+}
 #[test]
 fn sandbox_home_never_defaults_to_ambient_configuration() {
     assert!(app_support_dir(None).is_err());
@@ -39,15 +47,29 @@ fn sandbox_home_never_defaults_to_ambient_configuration() {
     assert_eq!(app_support_dir(Some("/sandbox".into())).unwrap(), Path::new("/sandbox/Library/Application Support/ai.storyteller.photocraft"));
 }
 #[test]
-fn preferences_survive_relaunch_and_failed_write_preserves_old_file() {
+fn preferences_survive_relaunch() {
     let root = temp();
     let mut s = services(&root);
-    s.save_prefs.as_mut().unwrap()("{\"theme\":\"dark\"}").unwrap();
-    let old = s.load_prefs.as_mut().unwrap()().unwrap();
-    assert!(s.save_prefs.as_mut().unwrap()(&"x".repeat(MAX_PREFS as usize + 1)).is_err());
+    save_recent(&mut s, vec!["/external/one.psd".into(), "/external/two.pcraft".into()]);
     drop(s);
+    let s = services(&root);
+    assert_eq!(recent(&s), vec!["/external/one.psd".to_string(), "/external/two.pcraft".to_string()]);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn a_damaged_settings_file_opens_with_defaults() {
+    let root = temp();
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("config.toml"), b"this is not toml = = =").unwrap();
     let mut s = services(&root);
-    assert_eq!(s.load_prefs.as_mut().unwrap()(), Some(old));
+    assert!(recent(&s).is_empty());
+    // A save replaces the damaged file instead of failing the launch.
+    save_recent(&mut s, vec!["/external/one.psd".into()]);
+    drop(s);
+    let s = services(&root);
+    assert_eq!(recent(&s), vec!["/external/one.psd".to_string()]);
+    drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
@@ -127,33 +149,41 @@ fn managed_snapshot(root: &Path) -> (String, String) {
 }
 
 #[test]
-fn moved_container_rebases_matching_recent_snapshot_and_preserves_unknown_preferences() {
+fn moved_container_rebases_matching_recent_snapshot() {
     let root = temp();
     let (old, current) = managed_snapshot(&root);
-    let prefs = serde_json::json!({"fileHandling":{"recentFiles":[old,"/external/photo.psd"],"unknown":42},"future":{"unchanged":[1,2]}});
     let mut s = services(&root);
-    s.save_prefs.as_mut().unwrap()(&prefs.to_string()).unwrap();
-    let loaded: serde_json::Value = serde_json::from_str(&s.load_prefs.as_mut().unwrap()().unwrap()).unwrap();
-    let mut expected = prefs;
-    expected["fileHandling"]["recentFiles"][0] = current.into();
-    assert_eq!(loaded, expected);
+    save_recent(&mut s, vec![old, "/external/photo.psd".into()]);
+    drop(s);
+    // The next launch runs in a container at `root`: the managed copy moved with it.
+    let mut s = services(&root);
+    assert_eq!(recent(&s), vec![current.clone(), "/external/photo.psd".to_string()]);
+    // The rebase is kept: the next launch reads the current path.
+    s.settings.as_mut().unwrap().0.flush().unwrap();
+    drop(s);
+    let s = services(&root);
+    assert_eq!(recent(&s), vec![current, "/external/photo.psd".to_string()]);
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-fn unrelated_missing_malformed_and_traversal_preferences_are_returned_verbatim() {
+fn unrelated_missing_and_traversal_recent_paths_are_left_alone() {
     let root = temp();
     managed_snapshot(&root);
+    let prefix = "/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft";
+    let paths = vec![
+        "/external/photo.psd".to_string(),
+        format!("{prefix}/documents/missing/photo.pcraft"),
+        format!("{prefix}/documents/reservation/../photo.pcraft"),
+        format!("{prefix}/documents/reservation//photo.pcraft"),
+        "relative/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft".to_string(),
+    ];
     let mut s = services(&root);
-    for text in [
-        " { \"fileHandling\": { \"recentFiles\": [\"/external/photo.psd\", \"/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/missing/photo.pcraft\", \"/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation/../photo.pcraft\", \"/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation//photo.pcraft\", \"relative/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft\", 7] } } ",
-        "{\"fileHandling\":{\"recentFiles\":\"wrong type\"}}",
-        "{broken JSON",
-    ] {
-        s.save_prefs.as_mut().unwrap()(text).unwrap();
-        assert_eq!(s.load_prefs.as_mut().unwrap()().as_deref(), Some(text));
-    }
+    save_recent(&mut s, paths.clone());
+    drop(s);
+    let s = services(&root);
+    assert_eq!(recent(&s), paths);
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -184,11 +214,12 @@ fn managed_snapshot_symlink_outside_root_does_not_rebase() {
     std::fs::write(outside.join("photo.pcraft"), b"outside").unwrap();
     std::fs::create_dir_all(root.join("documents")).unwrap();
     std::os::unix::fs::symlink(&outside, root.join("documents/reservation")).unwrap();
-    let old = "/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft";
-    let text = serde_json::json!({"fileHandling":{"recentFiles":[old]}}).to_string();
+    let old = "/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft".to_string();
     let mut s = services(&root);
-    s.save_prefs.as_mut().unwrap()(&text).unwrap();
-    assert_eq!(s.load_prefs.as_mut().unwrap()(), Some(text));
+    save_recent(&mut s, vec![old.clone()]);
+    drop(s);
+    let s = services(&root);
+    assert_eq!(recent(&s), vec![old]);
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(outside).unwrap();
@@ -198,10 +229,12 @@ fn managed_snapshot_symlink_outside_root_does_not_rebase() {
 fn external_archive_marker_collision_never_rebases() {
     let root = temp();
     managed_snapshot(&root);
-    let text = serde_json::json!({"fileHandling":{"recentFiles":["/Volumes/backup/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft"]}}).to_string();
+    let path = "/Volumes/backup/Library/Application Support/ai.storyteller.photocraft/documents/reservation/photo.pcraft".to_string();
     let mut s = services(&root);
-    s.save_prefs.as_mut().unwrap()(&text).unwrap();
-    assert_eq!(s.load_prefs.as_mut().unwrap()(), Some(text));
+    save_recent(&mut s, vec![path.clone()]);
+    drop(s);
+    let s = services(&root);
+    assert_eq!(recent(&s), vec![path]);
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

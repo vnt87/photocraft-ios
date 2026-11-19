@@ -38,7 +38,6 @@ fn decode_png(bytes: &[u8], bound: &Limits) -> Result<(u32, u32, Vec<u8>), Strin
 
 #[cfg(target_os = "ios")]
 pub fn install(services: &mut photocraft_ui_egui::Services) {
-    services.encode_png = Some(Box::new(|w, h, pixels| encode_png(w, h, pixels, &limits())));
     services.clipboard_set_image = Some(Box::new(native::set_image));
     services.clipboard_get_image = Some(Box::new(|| match native::get_image() {
         Ok(image) => Ok(image),

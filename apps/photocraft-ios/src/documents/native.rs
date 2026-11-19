@@ -1,5 +1,6 @@
 //! Audited UIKit boundary. Only the save worker waits; the main event loop never does.
 use super::{ReservationBatch, bounded_read, bounded_read_limit, reserve_path, validate_managed_path};
+use craft::host::{FileError, Files, PickAnswer, PickId, PickKind, PickRequest, Picked};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
@@ -9,18 +10,212 @@ use objc2_foundation::{
 };
 use objc2_ui_kit::{UIDocumentPickerDelegate, UIDocumentPickerViewController, UIViewController};
 use objc2_uniform_type_identifiers::UTType;
-use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, FileDialogRequest, Services};
+use photocraft_ui_egui::Services;
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
 thread_local! {
     // UIKit's delegate is weak: hold both objects until its terminal callback.
     static ACTIVE: RefCell<Option<(Retained<PickerDelegate>, Retained<UIDocumentPickerViewController>)>> = const { RefCell::new(None) };
 }
 
+/// The picks waiting for the one picker UIKit can show at a time, and the answers not taken yet.
+#[derive(Default)]
+struct State {
+    next: u64,
+    queued: VecDeque<(PickId, PickRequest)>,
+    /// The pick the picker is showing, with its request.
+    active: Option<(PickId, PickRequest)>,
+    answers: Vec<PickAnswer>,
+    /// Picks an owner closed before they were answered: their answer is dropped when it comes.
+    forgotten: HashSet<PickId>,
+    last_folders: HashMap<String, PathBuf>,
+}
+
+/// The host's file service on iPadOS: the managed document store, and UIKit's document picker for
+/// Open. A Save reserves a managed copy at once (the external destination is chosen by the export
+/// picker when the bytes are written); choosing a folder is not supported.
+pub struct UIKitFiles {
+    root: PathBuf,
+    /// Set by `Arc::new_cyclic`: a picker answers through the service it came from.
+    me: Weak<UIKitFiles>,
+    state: Mutex<State>,
+}
+
+impl UIKitFiles {
+    fn lock(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Stores an answer for a pick that never reached the picker (Save, Folder, or a picker that
+    /// could not be shown).
+    fn store(&self, id: PickId, request: PickRequest, picked: Picked) {
+        let mut state = self.lock();
+        if state.forgotten.remove(&id) {
+            return;
+        }
+        state.answers.push(PickAnswer { id, request, picked });
+    }
+
+    /// Settles the pick the picker showed and starts the next queued one.
+    fn answer(&self, id: PickId, picked: Picked) {
+        let mut state = self.lock();
+        let request = match &state.active {
+            Some((active, request)) if *active == id => Some(request.clone()),
+            _ => None,
+        };
+        if state.active.as_ref().is_some_and(|(active, _)| *active == id) {
+            state.active = None;
+        }
+        let forgotten = state.forgotten.remove(&id);
+        if let (Some(request), false) = (request, forgotten) {
+            state.answers.push(PickAnswer { id, request, picked });
+        }
+        drop(state);
+        self.pump();
+    }
+
+    /// Shows the next queued picker on the main queue, unless one is already up.
+    fn pump(&self) {
+        let Some(me) = self.me.upgrade() else { return };
+        let next = {
+            let mut state = self.lock();
+            if state.active.is_some() {
+                return;
+            }
+            let next = state.queued.pop_front();
+            if let Some((id, request)) = &next {
+                state.active = Some((*id, request.clone()));
+            }
+            next
+        };
+        let Some((id, request)) = next else { return };
+        dispatch2::DispatchQueue::main().exec_async(move || me.present(id, request));
+    }
+
+    fn present(self: &Arc<Self>, id: PickId, request: PickRequest) {
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            self.answer(id, Picked::Unavailable("UIKit main queue unavailable".into()));
+            return;
+        };
+        let types = content_types(&request);
+        let types = NSArray::from_retained_slice(&types);
+        let picker = UIDocumentPickerViewController::initForOpeningContentTypes_asCopy(UIDocumentPickerViewController::alloc(mtm), &types, false);
+        picker.setAllowsMultipleSelection(request.kind == PickKind::OpenMany);
+        show_picker(picker, Completion::Open(Arc::clone(self), id, self.root.clone()), mtm, None);
+    }
+
+    /// The managed copy a Save writes to: the suggested name (with the suggested extension when it
+    /// has none) under a fresh identity, so an export never overwrites another document's copy.
+    fn save_path(&self, request: &PickRequest) -> Result<PathBuf, String> {
+        let mut name = request.file_name.clone().ok_or("The document needs a file name")?;
+        if Path::new(&name).extension().is_none()
+            && let Some(extension) = &request.suggested_extension
+        {
+            name.push('.');
+            name.push_str(extension);
+        }
+        reserve_path(&self.root, &name)
+    }
+}
+
+impl Files for UIKitFiles {
+    fn pick(&self, request: PickRequest) -> PickId {
+        let id = {
+            let mut state = self.lock();
+            state.next = state.next.saturating_add(1);
+            PickId(state.next)
+        };
+        match request.kind {
+            PickKind::Save => {
+                let picked = match self.save_path(&request) {
+                    Ok(path) => Picked::Paths(vec![path]),
+                    Err(error) => Picked::Unavailable(error),
+                };
+                self.store(id, request, picked);
+            }
+            PickKind::Folder => self.store(id, request, Picked::Unavailable("Choosing a folder is not supported on iPadOS yet".into())),
+            PickKind::Open | PickKind::OpenMany => {
+                self.lock().queued.push_back((id, request));
+                self.pump();
+            }
+        }
+        id
+    }
+
+    fn take_answer(&self, id: PickId) -> Option<Picked> {
+        let mut state = self.lock();
+        let at = state.answers.iter().position(|answer| answer.id == id)?;
+        Some(state.answers.remove(at).picked)
+    }
+
+    fn forget(&self, id: PickId) {
+        let mut state = self.lock();
+        state.answers.retain(|answer| answer.id != id);
+        state.queued.retain(|(queued, _)| *queued != id);
+        if state.active.as_ref().is_some_and(|(active, _)| *active == id) {
+            // UIKit's picker cannot be dismissed from here; its answer is dropped when it comes.
+            state.forgotten.insert(id);
+        }
+    }
+
+    fn pick_pending(&self) -> bool {
+        let state = self.lock();
+        state.active.is_some() || !state.queued.is_empty()
+    }
+
+    fn read(&self, path: &Path) -> Result<Vec<u8>, FileError> {
+        std::fs::read(path).map_err(|error| io_error(path, error))
+    }
+
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), FileError> {
+        photocraft_format::atomic_write(path, bytes).map_err(|error| FileError::Other(error.to_string()))
+    }
+
+    fn last_folder(&self, purpose: &str) -> Option<PathBuf> {
+        self.lock().last_folders.get(purpose).cloned()
+    }
+}
+
+fn io_error(path: &Path, error: std::io::Error) -> FileError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => FileError::NotFound(path.to_path_buf()),
+        std::io::ErrorKind::PermissionDenied => FileError::PermissionDenied(path.to_path_buf()),
+        _ => FileError::Other(error.to_string()),
+    }
+}
+
+/// The picker's types: every extension the request filters offer, deduplicated and capped, or the
+/// documents File › Open reads when the request lists none.
+fn content_types(request: &PickRequest) -> Vec<Retained<UTType>> {
+    let mut types = Vec::new();
+    let mut seen = HashSet::new();
+    for filter in &request.filters {
+        for extension in &filter.extensions {
+            if types.len() >= 256 {
+                break;
+            }
+            if !seen.insert(extension.as_str()) {
+                continue;
+            }
+            if let Some(kind) = UTType::typeWithFilenameExtension(&NSString::from_str(extension)) {
+                types.push(kind);
+            }
+        }
+    }
+    if types.is_empty() {
+        types = ["com.adobe.photoshop-image", "public.image", "public.data"]
+            .iter()
+            .filter_map(|id| UTType::typeWithIdentifier(&NSString::from_str(id)))
+            .collect();
+    }
+    types
+}
+
 enum Completion {
-    Open(FileDialogReply, PathBuf),
+    Open(Arc<UIKitFiles>, PickId, PathBuf),
     Export(mpsc::Sender<Result<Retained<NSURL>, String>>),
 }
 struct PickerState {
@@ -43,14 +238,19 @@ define_class!(
         fn picked(&self, _picker: &UIDocumentPickerViewController, urls: &NSArray<NSURL>) {
             if let Some(completion) = self.ivars().completion.borrow_mut().take() {
                 match completion {
-                    Completion::Open(reply, root) => {
+                    Completion::Open(files, id, root) => {
                         let urls: Vec<Retained<NSURL>> = urls.iter().collect();
+                        let worker = Arc::clone(&files);
                         let result = std::thread::Builder::new().name("photocraft-document-import".into()).spawn(move || {
-                            let answer = read_selection(urls, &root).map(FileDialogAnswer::Paths).unwrap_or_else(FileDialogAnswer::Unavailable);
-                            reply.send(Some(answer));
+                            let picked = match read_selection(urls, &root) {
+                                Ok(paths) => Picked::Paths(paths.into_iter().map(PathBuf::from).collect()),
+                                Err(error) => Picked::Unavailable(error),
+                            };
+                            worker.answer(id, picked);
                         });
                         if let Err(error) = result {
                             log::error!("Could not start document import: {error}");
+                            files.answer(id, Picked::Unavailable(format!("Could not start the document import: {error}")));
                         }
                     }
                     Completion::Export(reply) => {
@@ -65,7 +265,7 @@ define_class!(
         fn cancelled(&self, _picker: &UIDocumentPickerViewController) {
             if let Some(completion) = self.ivars().completion.borrow_mut().take() {
                 match completion {
-                    Completion::Open(reply, _) => reply.send(None),
+                    Completion::Open(files, id, _) => files.answer(id, Picked::Cancelled),
                     Completion::Export(reply) => {
                         let _ = reply.send(Err("cancelled".into()));
                     }
@@ -97,7 +297,7 @@ fn root_controller(mtm: objc2::MainThreadMarker) -> Result<Retained<UIViewContro
 
 fn fail_completion(completion: Completion, error: String) {
     match completion {
-        Completion::Open(reply, _) => reply.send(Some(FileDialogAnswer::Unavailable(error))),
+        Completion::Open(files, id, _) => files.answer(id, Picked::Unavailable(error)),
         Completion::Export(reply) => {
             let _ = reply.send(Err(error));
         }
@@ -266,39 +466,10 @@ fn coordinated_write(url: Retained<NSURL>, bytes: &[u8], commit: impl Fn() -> Re
 pub fn install(services: &mut Services, root: PathBuf) -> Result<(), String> {
     std::fs::create_dir_all(root.join("documents")).map_err(|e| e.to_string())?;
     services.save_requires_worker = true;
-    let dialog_root = root.clone();
-    services.file_dialog = Some(Box::new(move |request, _frame, reply| match request {
-        FileDialogRequest::Save { suggested } => {
-            let answer = reserve_path(&dialog_root, &suggested)
-                .and_then(|p| p.to_str().map(str::to_owned).ok_or("Non-Unicode managed document path".into()))
-                .map(FileDialogAnswer::SaveTo)
-                .unwrap_or_else(FileDialogAnswer::Unavailable);
-            reply.send(Some(answer));
-        }
-        FileDialogRequest::Folder { .. } => {
-            reply.send(Some(FileDialogAnswer::Unavailable("Choosing a folder is not supported on iPadOS yet".into())));
-        }
-        FileDialogRequest::Open { multiple, extensions, .. } => {
-            let root = dialog_root.clone();
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let Some(mtm) = objc2::MainThreadMarker::new() else {
-                    reply.send(Some(FileDialogAnswer::Unavailable("UIKit main queue unavailable".into())));
-                    return;
-                };
-                let types: Vec<Retained<UTType>> = match extensions {
-                    Some(extensions) => extensions.iter().filter_map(|extension| UTType::typeWithFilenameExtension(&NSString::from_str(extension))).collect(),
-                    None => ["com.adobe.photoshop-image", "public.image", "public.data"]
-                        .iter()
-                        .filter_map(|id| UTType::typeWithIdentifier(&NSString::from_str(id)))
-                        .collect(),
-                };
-                let types = NSArray::from_retained_slice(&types);
-                let picker = UIDocumentPickerViewController::initForOpeningContentTypes_asCopy(UIDocumentPickerViewController::alloc(mtm), &types, false);
-                picker.setAllowsMultipleSelection(multiple);
-                show_picker(picker, Completion::Open(reply, root), mtm, None);
-            });
-        }
-    }));
+    // Every pick goes through the host's file service: UIKit's picker for Open, a reserved
+    // managed copy for Save, and no folder picker.
+    let files = Arc::new_cyclic(|me| UIKitFiles { root: root.clone(), me: me.clone(), state: Mutex::new(State::default()) });
+    services.files = Some(files);
     let write_root = root.clone();
     services.write = Some(Box::new(move |path, bytes| {
         let path = Path::new(path);

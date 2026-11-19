@@ -278,7 +278,7 @@ mod tests {
         keys.handle(LEFT_GUI, true, 0.0);
         let matched = keys.handle(A, true, 0.1).iter().any(|event| {
             let Event::Key { key, pressed: true, modifiers, .. } = event else { return false };
-            photocraft_ui_egui::shortcuts::parse("Cmd+A").is_some_and(|sc| photocraft_ui_egui::shortcuts::key_matches(&sc, *key, *modifiers))
+            photocraft_ui_egui::shortcuts::parse("Cmd+A").is_some_and(|sc| sc.logical_key == *key && modifiers.matches_logically(sc.modifiers))
         });
         assert!(matched, "a ⌘ press from the hardware keyboard must match PhotoCraft's Cmd+A binding");
     }
